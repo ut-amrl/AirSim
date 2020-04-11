@@ -12,6 +12,8 @@ STRICT_MODE_ON
 #include "ros/ros.h"
 #include "sensors/imu/ImuBase.hpp"
 #include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
+#include "vehicles/car/api/CarRpcLibClient.hpp"
+#include "vehicles/car/api/CarRpcLibAdapators.hpp"
 #include "yaml-cpp/yaml.h"
 #include <airsim_ros_pkgs/GimbalAngleEulerCmd.h>
 #include <airsim_ros_pkgs/GimbalAngleQuatCmd.h>
@@ -52,6 +54,7 @@ STRICT_MODE_ON
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 #include <unordered_map>
+#include <glog/logging.h>
 // #include "nodelet/nodelet.h"
 
 // todo move airlib typedefs to separate header file?
@@ -115,7 +118,10 @@ struct GimbalCmd
 class AirsimROSWrapper
 {
 public:
-    AirsimROSWrapper(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private, const std::string & host_ip);
+    AirsimROSWrapper(const ros::NodeHandle& nh, 
+                     const ros::NodeHandle& nh_private, 
+                     const std::string & host_ip,
+                     const std::string& vehicle_type);
     ~AirsimROSWrapper() {}; 
 
     void initialize_airsim();
@@ -129,17 +135,32 @@ public:
 
     ros::Time first_imu_ros_ts;
     int64_t first_imu_unreal_ts = -1;
+    
+    enum VehicleType {
+      CAR,
+      MULTIROTOR,
+    };
 
 private:
+    VehicleType vehicle_type_;
+  
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
     void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
     void lidar_timer_cb(const ros::TimerEvent& event);
+   
+    void car_state_timer_cb(const ros::TimerEvent& event); 
+
 
     /// ROS subscriber callbacks
     void vel_cmd_world_frame_cb(const airsim_ros_pkgs::VelCmd::ConstPtr& msg, const std::string& vehicle_name);
     void vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd::ConstPtr& msg, const std::string& vehicle_name);
 
+    // The standard velocity cmd callback where the commands are in the body
+    // reference frame
+    void vel_cmd_body_frame_std_cb(const geometry_msgs::Twist::ConstPtr& msg,
+                                   const std::string& vehicle_name);
+        
     void vel_cmd_group_body_frame_cb(const airsim_ros_pkgs::VelCmdGroup& msg);
     void vel_cmd_group_world_frame_cb(const airsim_ros_pkgs::VelCmdGroup& msg);
 
@@ -175,7 +196,13 @@ private:
     
     void process_and_publish_img_response(const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name);
 
+    
     // methods which parse setting json ang generate ros pubsubsrv
+    
+    // Adds the advertisers, subscribers, and services specific to cars
+    void add_ros_car(const std::string& vehicle_name);
+    // Adds the advertisers, subscribers, and services specific to multirotors
+    void add_ros_multirotor(const std::string& vehicle_name);
     void create_ros_pubs_from_settings_json();
     void append_static_camera_tf(const std::string& vehicle_name, const std::string& camera_name, const CameraSetting& camera_setting);
     void append_static_lidar_tf(const std::string& vehicle_name, const std::string& lidar_name, const LidarSetting& lidar_setting);
@@ -189,7 +216,10 @@ private:
     msr::airlib::Quaternionr get_airlib_quat(const geometry_msgs::Quaternion& geometry_msgs_quat) const;
     msr::airlib::Quaternionr get_airlib_quat(const tf2::Quaternion& tf2_quat) const;
 
-    nav_msgs::Odometry get_odom_msg_from_airsim_state(const msr::airlib::MultirotorState& drone_state) const;
+    nav_msgs::Odometry get_odom_msg_from_airsim_state(
+                  const msr::airlib::MultirotorState& drone_state) const;
+    nav_msgs::Odometry get_odom_msg_from_airsim_state(
+                  const msr::airlib::CarApiBase::CarState& car_state) const;
     airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
     sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
     sensor_msgs::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& imu_data);
@@ -242,6 +272,33 @@ private:
         // bool is_armed_;
         // std::string mode_;
     };
+    
+    
+    // utility struct for a SINGLE car
+    struct CarROS
+    {
+        std::string vehicle_name;
+
+        /// All things ROS
+        ros::Publisher odom_local_ned_pub;
+        ros::Publisher global_gps_pub;
+        // ros::Publisher home_geo_point_pub_; // geo coord of unreal origin
+        
+        // Subscriber to the standard velocity command
+        ros::Subscriber vel_cmd_body_frame_cb_std_sub;
+        ros::Subscriber vel_cmd_body_frame_sub;
+        ros::Subscriber vel_cmd_world_frame_sub;
+
+
+        /// State
+        msr::airlib::CarApiBase::CarState curr_car_state;
+        nav_msgs::Odometry curr_odom_ned;
+        sensor_msgs::NavSatFix gps_sensor_msg;
+        bool has_vel_cmd;
+        VelCmd vel_cmd;
+
+        std::string odom_frame_id;
+    };
 
     ros::ServiceServer reset_srvr_;
     ros::Publisher origin_geo_point_pub_; // home geo coord of drones
@@ -249,6 +306,7 @@ private:
     airsim_ros_pkgs::GPSYaw origin_geo_point_msg_; // todo duplicate
 
     std::vector<MultiRotorROS> multirotor_ros_vec_;
+    std::vector<CarROS> car_ros_vec_;
 
     std::vector<string> vehicle_names_;
     std::vector<VehicleSetting> vehicle_setting_vec_;
@@ -263,6 +321,10 @@ private:
     msr::airlib::MultirotorRpcLibClient airsim_client_;
     msr::airlib::MultirotorRpcLibClient airsim_client_images_;
     msr::airlib::MultirotorRpcLibClient airsim_client_lidar_;
+    
+    msr::airlib::CarRpcLibClient airsim_car_client_;
+    msr::airlib::CarRpcLibClient airsim_car_client_images_;
+    msr::airlib::CarRpcLibClient airsim_car_client_lidar_;
 
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
