@@ -1100,7 +1100,19 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         // send control commands from the last callback to airsim
         if (car_ros.has_vel_cmd) {
           // TODO(Kavan): send control commands to car (use airsim_car_client_)
-          
+            double currentVel = car_ros.curr_car_state.kinematics_estimated.twist.linear.x;
+            double targetVel = car_ros.cmd_vel.twist.linear.x;
+
+            CarApiBase::CarControls controls;
+
+            // For the moment, a really dumb controller, only forward/backward
+            if (currentVel < targetVel- CAR_VEL_EPSILON) {
+                controls.throttle = 1.0f
+            } else if (currentVel > targetVel + CAR_VEL_EPSILON) {
+                controls.throttle = -1.0f
+            }
+
+            airsim_car_client.setCarControls(controls);
         }
 
         // "clear" control cmds
