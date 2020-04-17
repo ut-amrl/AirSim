@@ -155,6 +155,8 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
         vehicle_name + "/global_gps", 10);
         
         
+
+  printf("Listening for %s\n", vehicle_name + "/cmd_vel");
   car_ros.vel_cmd_body_frame_cb_std_sub = 
      nh_private_.subscribe<geometry_msgs::Twist>(vehicle_name + 
     "/cmd_vel", 1, 
@@ -1059,6 +1061,8 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event)
     }
 }
 
+const double CAR_VEL_EPSILON = 0.25;
+
 void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
 {
   try
@@ -1099,24 +1103,46 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
 
         // send control commands from the last callback to airsim
         if (car_ros.has_vel_cmd) {
-          // TODO(Kavan): send control commands to car (use airsim_car_client_)
-            double currentVel = car_ros.curr_car_state.kinematics_estimated.twist.linear.x;
-            double targetVel = car_ros.cmd_vel.twist.linear.x;
+            printf("Processing vel cmd\n");
+            // TODO(Kavan): send control commands to car (use airsim_car_client_)
+            double currentVel = car_ros.curr_car_state.kinematics_estimated.twist.linear.x();
+            double targetVel = car_ros.vel_cmd.x;
+            printf("Velocities %f %f\n", currentVel, targetVel);
 
             CarApiBase::CarControls controls;
 
             // For the moment, a really dumb controller, only forward/backward
-            if (currentVel < targetVel- CAR_VEL_EPSILON) {
-                controls.throttle = 1.0f
+            if (currentVel < targetVel - CAR_VEL_EPSILON) {
+                controls.throttle = (targetVel - currentVel) / targetVel;
+                controls.is_manual_gear = true;
+                controls.manual_gear = 1;
             } else if (currentVel > targetVel + CAR_VEL_EPSILON) {
-                controls.throttle = -1.0f
+                controls.brake = (currentVel - targetVel) / currentVel;
+
+            } else {
+                // Only turn off the vel cmd once we have achieved target velocity
+                // TODO figure out how to maintain speed...
+                // car_ros.has_vel_cmd = false;
             }
 
-            airsim_car_client.setCarControls(controls);
+            // handle steering
+            double currentYaw = car_ros.curr_car_state.kinematics_estimated.twist.angular.z();
+            double targetYaw = car_ros.vel_cmd.yaw_mode.yaw_or_rate;
+            printf("Yaws %f %f\n", currentYaw, targetYaw);
+            // For the moment, a really dumb controller, only forward/backward
+            if (currentYaw < targetYaw - CAR_VEL_EPSILON) {
+                controls.steering = (targetYaw - currentYaw) / targetYaw;
+            } else if (currentYaw > targetYaw + CAR_VEL_EPSILON) {
+                controls.steering = (targetYaw - currentYaw) / targetYaw;
+            } else {
+                // Only turn off the vel cmd once we have achieved target velocity
+                // car_ros.has_vel_cmd = false;
+            }
+
+            airsim_car_client_.setCarControls(controls);
         }
 
         // "clear" control cmds
-        car_ros.has_vel_cmd = false;
     }
 
     // IMUS
