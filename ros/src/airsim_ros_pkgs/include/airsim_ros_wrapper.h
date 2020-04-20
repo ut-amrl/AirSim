@@ -79,6 +79,7 @@ struct SimpleMatrix
 
 struct VelCmd
 {
+    ros::Time t;
     double x;
     double y;
     double z;
@@ -115,6 +116,22 @@ struct GimbalCmd
     //         vehicle_name(vehicle_name), camera_name(camera_name), target_quat(target_quat) {};
 };
 
+struct PIDVelocityController {
+  PIDVelocityController();
+  const double ERROR_WEIGHT = 3.0;
+  const double INTEGRAL_WEIGHT = 1.5;
+  const double DERIV_WEIGHT = 1.5;
+  const double VEL_EPSILON = 0.03;
+  double last_error_;
+  double last_integral_;
+
+  double target_velocity_;
+  double target_steering_;
+
+  void set_target(const VelCmd& cmd);
+  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, const double timestep);
+};
+
 class AirsimROSWrapper
 {
 public:
@@ -143,7 +160,8 @@ public:
 
 private:
     VehicleType vehicle_type_;
-  
+    PIDVelocityController velocity_controller_;
+
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
     void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
@@ -230,6 +248,8 @@ private:
     void convert_yaml_to_simple_mat(const YAML::Node& node, SimpleMatrix& m) const; // todo ugly
 
 private:
+    double update_airsim_timestep_;
+
     // subscriber / services for ALL robots
     ros::Subscriber vel_cmd_all_body_frame_sub_;
     ros::Subscriber vel_cmd_all_world_frame_sub_;
