@@ -592,7 +592,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
   std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
   
   int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
-  car_ros_vec_[vehicle_idx].vel_cmd.t = ros::Time::now();;
+  car_ros_vec_[vehicle_idx].vel_cmd.t = ros::Time::now();
   car_ros_vec_[vehicle_idx].vel_cmd.x = msg->linear.x;
   car_ros_vec_[vehicle_idx].vel_cmd.y = msg->linear.y;
   car_ros_vec_[vehicle_idx].vel_cmd.z = msg->linear.z;
@@ -600,7 +600,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
         msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.is_rate = true;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.yaw_or_rate = msg->angular.z;
-  velocity_controller_.set_target(car_ros_vec_[vehicle_idx].vel_cmd);
+  car_ros_vec_[vehicle_idx].velocity_controller.set_target(car_ros_vec_[vehicle_idx].vel_cmd);
   car_ros_vec_[vehicle_idx].has_vel_cmd = true;
 }
 
@@ -1063,7 +1063,7 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event)
     }
 }
 
-const double VEL_CMD_DURATION = 5.0;
+const double VEL_CMD_DURATION = 15.0;
 
 void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
 {
@@ -1103,15 +1103,14 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         
 //         car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
 
-        // send control commands from the last callback to airsim
-        if (car_ros.has_vel_cmd && (ros::Time::now() - car_ros.vel_cmd.t).toSec() < VEL_CMD_DURATION) {
-            CarApiBase::CarControls controls = velocity_controller_.get_next(car_ros.curr_car_state.kinematics_estimated.twist, update_airsim_timestep_);
-            airsim_car_client_.setCarControls(controls);
-        } else {
+        if (car_ros.has_vel_cmd && (ros::Time::now() - car_ros.vel_cmd.t).toSec() > VEL_CMD_DURATION) {
             car_ros.has_vel_cmd = false;
+            car_ros.velocity_controller.set_zero_target();            
         }
 
-        // "clear" control cmds
+        // send control commands from the last callback to airsim
+        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, update_airsim_timestep_);
+        airsim_car_client_.setCarControls(controls);
     }
 
     // IMUS

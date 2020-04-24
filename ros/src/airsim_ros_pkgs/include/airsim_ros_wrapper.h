@@ -55,6 +55,7 @@ STRICT_MODE_ON
 #include <tf2_ros/transform_listener.h>
 #include <unordered_map>
 #include <glog/logging.h>
+#include <queue>
 // #include "nodelet/nodelet.h"
 
 // todo move airlib typedefs to separate header file?
@@ -118,17 +119,18 @@ struct GimbalCmd
 
 struct PIDVelocityController {
   PIDVelocityController();
-  const double ERROR_WEIGHT = 3.0;
-  const double INTEGRAL_WEIGHT = 1.5;
-  const double DERIV_WEIGHT = 1.5;
-  const double VEL_EPSILON = 0.03;
-  double last_error_;
+  const double K_p = 3.0;
+  const double K_i = 0.0;
+  const double K_d = 0.25;
+  const double VEL_EPSILON = 0.01;
   double last_integral_;
+  double last_error_;
 
   double target_velocity_;
   double target_steering_;
 
   void set_target(const VelCmd& cmd);
+  void set_zero_target();
   msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, const double timestep);
 };
 
@@ -160,7 +162,6 @@ public:
 
 private:
     VehicleType vehicle_type_;
-    PIDVelocityController velocity_controller_;
 
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
@@ -316,6 +317,7 @@ private:
         sensor_msgs::NavSatFix gps_sensor_msg;
         bool has_vel_cmd;
         VelCmd vel_cmd;
+        PIDVelocityController velocity_controller;
 
         std::string odom_frame_id;
     };

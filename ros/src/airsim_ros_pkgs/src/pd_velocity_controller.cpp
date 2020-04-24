@@ -12,6 +12,13 @@ void PIDVelocityController::set_target(const VelCmd& cmd) {
     last_integral_ = -DBL_MAX;
 }
 
+void PIDVelocityController::set_zero_target() {
+    target_velocity_ = 0;
+    target_steering_ =0;
+    last_error_ = -DBL_MAX;
+    last_integral_ = -DBL_MAX;
+}
+
 msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::airlib::Twist& current_twist, const double timestep) {
   msr::airlib::CarApiBase::CarControls controls;
   // TODO(Kavan): send control commands to car (use airsim_car_client_)
@@ -19,33 +26,35 @@ msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::
   double targetVel = target_velocity_;
 
   double acc;
-  
-  double error = targetVel - currentVel;
-  if (last_integral_ != -DBL_MAX && last_error_ != -DBL_MAX) {
+  double error = std::abs(targetVel - currentVel);
+
+  if (last_integral_ != -DBL_MAX) {
     last_integral_ += error*timestep;
-    double derivative = (error - last_error_) / timestep;
-    acc = PIDVelocityController::ERROR_WEIGHT * error + PIDVelocityController::INTEGRAL_WEIGHT * last_integral_ + PIDVelocityController::DERIV_WEIGHT * derivative;
+    double derivative = (error - last_error_) / (timestep);
+    acc = PIDVelocityController::K_p * error + PIDVelocityController::K_i * last_integral_ + PIDVelocityController::K_d * derivative;
     printf("ERROR %f\t DERIVATIVE %f\t INTEGRAL %f\t", error, derivative, last_integral_);
   } else {
-    acc = PIDVelocityController::ERROR_WEIGHT * error;
+    acc = PIDVelocityController::K_p * error;
     last_integral_ = error*timestep;
   }
+
   printf("COMPUTED ACC %f\n", acc);
   last_error_ = error;
-
+  
   // For the moment, a really dumb controller, only forward/backward
-  if (currentVel < targetVel - PIDVelocityController::VEL_EPSILON) {
+  if (currentVel < targetVel) {
       // printf("+: Velocities %f %f\n", currentVel, targetVel);
-      controls.throttle = acc;
+      controls.throttle = std::min(acc, 1.0);
       controls.is_manual_gear = true;
       controls.manual_gear = 1;
-  } else if (currentVel > targetVel + PIDVelocityController::VEL_EPSILON) {
+  } else if (currentVel > targetVel && currentVel > PIDVelocityController::VEL_EPSILON) {
       // printf("-: Velocities %f %f\n", currentVel, targetVel);
-      controls.brake = std::abs(acc);
-  } else {
-      // Only turn off the vel cmd once we have achieved target velocity
-      // TODO figure out how to maintain speed...
-      // car_ros.has_vel_cmd = false;
+      controls.brake = std::min(std::abs(acc), 1.0);
+  } else if (currentVel > targetVel) {
+      // Reverse
+      controls.throttle = std::min(acc, 1.0);
+      controls.is_manual_gear = true;
+      controls.manual_gear = -1;
   }
 
   // handle steering
@@ -54,9 +63,9 @@ msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::
   // printf("Yaws %f %f\n", currentYaw, targetYaw);
   // For the moment, a really dumb controller, only forward/backward
   if (currentYaw < targetYaw - PIDVelocityController::VEL_EPSILON) {
-      controls.steering = (targetYaw - currentYaw) / targetYaw;
+      controls.steering = (targetYaw - currentYaw);
   } else if (currentYaw > targetYaw + PIDVelocityController::VEL_EPSILON) {
-      controls.steering = (targetYaw - currentYaw) / targetYaw;
+      controls.steering = (targetYaw - currentYaw);
   } else {
       // Only turn off the vel cmd once we have achieved target velocity
       // car_ros.has_vel_cmd = false;
