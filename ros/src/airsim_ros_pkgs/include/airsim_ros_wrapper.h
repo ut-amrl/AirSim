@@ -122,8 +122,9 @@ struct PIDVelocityController {
   const double K_p = 1.0;
   const double K_i = 0.0;
   const double K_d = 0.15;
-  const double VEL_EPSILON = 0.01;
+  const double VEL_EPSILON = 0.025;
   const double MAINTENANCE_FACTOR = 0.15;
+  const double BRAKING_SCALING_FACTOR = 0.1;
   double last_integral_;
   double last_error_;
 

@@ -52,6 +52,7 @@ msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::
       controls.manual_gear = 1;
   } else if (currentVel > targetVel + PIDVelocityController::VEL_EPSILON && currentVel > PIDVelocityController::VEL_EPSILON) {
       printf("-: Velocities %f %f\n", currentVel, targetVel);
+      acc *= PIDVelocityController::BRAKING_SCALING_FACTOR;
       controls.brake = std::min(acc, 1.0);
   } else if (currentVel > targetVel) {
       // Reverse
