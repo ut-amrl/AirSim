@@ -23,17 +23,15 @@ for topic, msg, t in bag.read_messages(topics=[ODOM_TOPIC, CMD_TOPIC]):
     cmd_start_time = t
     command_responses.append([])    
   elif topic == ODOM_TOPIC and active_cmd:
-    time_delta = (t - cmd_start_time).to_sec()
-    x_vel = msg.twist.twist.linear.x
+    x_vel = np.linalg.norm([msg.twist.twist.linear.x, msg.twist.twist.linear.y, msg.twist.twist.linear.z])
     target_vel = active_cmd.linear.x
-    command_responses[-1].append((time_delta, target_vel - x_vel))    
-  print(msg)
+    command_responses[-1].append((t.to_sec(), x_vel, target_vel))
 
-import pdb; pdb.set_trace()
+plt.figure()
 for response_info in command_responses:
   data = np.array(response_info)
-  plt.figure()
   plt.scatter(data[:, 0], data[:, 1])
-  plt.show()
+  plt.plot(data[:, 0], data[:, 2])
+plt.show()
 
 bag.close()

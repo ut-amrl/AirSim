@@ -22,7 +22,8 @@ void PIDVelocityController::set_zero_target() {
 msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::airlib::Twist& current_twist, const double timestep) {
   msr::airlib::CarApiBase::CarControls controls;
   // TODO(Kavan): send control commands to car (use airsim_car_client_)
-  double currentVel = current_twist.linear.x();
+  double currentVel = current_twist.linear.norm();
+
   double targetVel = target_velocity_;
 
   double acc;
@@ -38,18 +39,20 @@ msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::
     last_integral_ = error*timestep;
   }
 
+  acc += MAINTENANCE_FACTOR * std::abs(targetVel);
+
   printf("COMPUTED ACC %f\n", acc);
   last_error_ = error;
   
   // For the moment, a really dumb controller, only forward/backward
   if (currentVel < targetVel) {
-      // printf("+: Velocities %f %f\n", currentVel, targetVel);
+      printf("+: Velocities %f %f\n", currentVel, targetVel);
       controls.throttle = std::min(acc, 1.0);
       controls.is_manual_gear = true;
       controls.manual_gear = 1;
-  } else if (currentVel > targetVel && currentVel > PIDVelocityController::VEL_EPSILON) {
-      // printf("-: Velocities %f %f\n", currentVel, targetVel);
-      controls.brake = std::min(std::abs(acc), 1.0);
+  } else if (currentVel > targetVel + PIDVelocityController::VEL_EPSILON && currentVel > PIDVelocityController::VEL_EPSILON) {
+      printf("-: Velocities %f %f\n", currentVel, targetVel);
+      controls.brake = std::min(acc, 1.0);
   } else if (currentVel > targetVel) {
       // Reverse
       controls.throttle = std::min(acc, 1.0);
