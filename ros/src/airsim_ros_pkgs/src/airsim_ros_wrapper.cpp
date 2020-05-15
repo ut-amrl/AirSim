@@ -156,7 +156,7 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
         
         
 
-  printf("Listening for %s\n", vehicle_name + "/cmd_vel");
+  printf("Listening for %s\n", (vehicle_name + "/cmd_vel").c_str());
   car_ros.vel_cmd_body_frame_cb_std_sub = 
      nh_private_.subscribe<geometry_msgs::Twist>(vehicle_name + 
     "/cmd_vel", 1, 
