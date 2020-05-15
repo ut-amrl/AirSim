@@ -730,7 +730,7 @@ void AirsimROSWrapper::vel_cmd_all_world_frame_cb(const airsim_ros_pkgs::VelCmd&
           car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.yaw_or_rate = 
                 math_common::rad2deg(msg.twist.angular.z);
           car_ros_vec_[vehicle_idx].has_vel_cmd = true;
-          printf("Recieved vel cmd\n");
+        //   printf("Recieved vel cmd\n");
         } 
         break;
       case MULTIROTOR:
@@ -1109,7 +1109,7 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         }
 
         // send control commands from the last callback to airsim
-        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, update_airsim_timestep_);
+        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, ros::Time::now());
         airsim_car_client_.setCarControls(controls);
     }
 

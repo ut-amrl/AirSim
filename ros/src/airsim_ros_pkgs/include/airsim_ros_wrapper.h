@@ -119,22 +119,23 @@ struct GimbalCmd
 
 struct PIDVelocityController {
   PIDVelocityController();
-  const double K_p = 15.0;
+  const double K_p = 2.0;
   const double K_i = 0.0;
-  const double K_d = 0.15;
+  const double K_d = 0.25;
   const double VEL_EPSILON = 0.025;
-  const double VEL_BRAKE_THRESHOLD = 0.5;
-  const double MAINTENANCE_FACTOR = 0.35;
+  const double VEL_BRAKE_THRESHOLD = 0.75;
+  const double MAINTENANCE_FACTOR = 0.1;
   const double BRAKING_SCALING_FACTOR = 0.1;
   double last_integral_;
   double last_error_;
+  ros::Time last_timestamp_;
 
   double target_velocity_;
   double target_steering_;
 
   void set_target(const VelCmd& cmd);
   void set_zero_target();
-  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, const double timestep);
+  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, const ros::Time timestep);
 };
 
 class AirsimROSWrapper
