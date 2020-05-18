@@ -1109,7 +1109,7 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         }
 
         // send control commands from the last callback to airsim
-        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, ros::Time::now());
+        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, car_ros.curr_car_state.speed, ros::Time::now());
         airsim_car_client_.setCarControls(controls);
     }
 

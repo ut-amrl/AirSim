@@ -19,23 +19,22 @@ void PIDVelocityController::set_zero_target() {
     last_integral_ = -DBL_MAX;
 }
 
-msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::airlib::Twist& current_twist, const ros::Time curr_time) {
+msr::airlib::CarApiBase::CarControls PIDVelocityController::get_next(const msr::airlib::Twist& current_twist, float speed, const ros::Time curr_time) {
   msr::airlib::CarApiBase::CarControls controls;
   // TODO(Kavan): send control commands to car (use airsim_car_client_)
-  double currentVel = current_twist.linear.norm();
+  double currentVel = speed;
 
   double targetVel = target_velocity_;
 
   double acc;
   double error = std::abs(targetVel - currentVel);
-
   double timestep = (curr_time - last_timestamp_).toSec();
 
   if (last_integral_ != -DBL_MAX) {
     last_integral_ += error*timestep;
     double derivative = (error - last_error_) / (timestep);
     acc = PIDVelocityController::K_p * error + PIDVelocityController::K_i * last_integral_ + PIDVelocityController::K_d * derivative;
-    printf("ERROR %f\t DERIVATIVE %f\t INTEGRAL %f Timestep %f\t", error, derivative, last_integral_, timestep);
+    // printf("ERROR %f\t DERIVATIVE %f\t INTEGRAL %f Timestep %f\t", error, derivative, last_integral_, timestep);
   } else {
     acc = PIDVelocityController::K_p * error;
     last_integral_ = error*timestep;

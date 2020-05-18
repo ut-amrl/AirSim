@@ -135,7 +135,7 @@ struct PIDVelocityController {
 
   void set_target(const VelCmd& cmd);
   void set_zero_target();
-  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, const ros::Time timestep);
+  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, float speed, const ros::Time timestep);
 };
 
 class AirsimROSWrapper
