@@ -119,12 +119,12 @@ struct GimbalCmd
 
 struct PIDVelocityController {
   PIDVelocityController();
-  const double K_p = 2.0;
+  const double K_p = 0.7;
   const double K_i = 0.0;
-  const double K_d = 0.25;
+  const double K_d = 1.0;
   const double VEL_EPSILON = 0.025;
-  const double VEL_BRAKE_THRESHOLD = 0.75;
-  const double MAINTENANCE_FACTOR = 0.1;
+  const double VEL_BRAKE_THRESHOLD = 0.65;
+  const double MAINTENANCE_FACTOR = 0.0;
   const double BRAKING_SCALING_FACTOR = 0.1;
   double last_integral_;
   double last_error_;
