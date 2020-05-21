@@ -14,9 +14,9 @@ roslaunch airsim_ros_pkgs airsim_node_car.launch &
 
 sleep 3
 
-rosbag record /airsim_node/PhysXCar/odom_local_ned/ /airsim_node/PhysXCar/cmd_vel --duration 30s -O step_response_data.bag &
+rosbag record /airsim_node/PhysXCar/odom_local_ned /airsim_node/PhysXCar/cmd_vel --duration 95s -O step_response_data.bag &
 
-rosbag play movement_cmds.bag --clock -u 30
+rosbag play step-response-input-05-09.bag --clock -u 95
 
 sleep 3
 

@@ -6,7 +6,7 @@ parser.add_argument('--bag_file', type=str)
 
 opt = parser.parse_args()
 
-ODOM_TOPIC = '/airsim_node/PhysXCar/odom_local_ned/'
+ODOM_TOPIC = '/airsim_node/PhysXCar/odom_local_ned'
 CMD_TOPIC = '/airsim_node/PhysXCar/cmd_vel'
 
 bag = rosbag.Bag(opt.bag_file)
@@ -30,8 +30,9 @@ for topic, msg, t in bag.read_messages(topics=[ODOM_TOPIC, CMD_TOPIC]):
 plt.figure()
 for response_info in command_responses:
   data = np.array(response_info)
-  plt.scatter(data[:, 0], data[:, 1])
-  plt.plot(data[:, 0], data[:, 2])
+  if len(data):
+    plt.scatter(data[:, 0], data[:, 1])
+    plt.plot(data[:, 0], data[:, 2])
 plt.show()
 
 bag.close()
