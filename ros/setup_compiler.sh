@@ -1,2 +1,2 @@
-export CC=/usr/bin/gcc
-export CXX=/usr/bin/g++
+export CC=/usr/bin/gcc-8
+export CXX=/usr/bin/g++-8

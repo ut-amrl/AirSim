@@ -32,6 +32,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_srvs
   tf2
   tf2_ros
+  tf2_msgs
+  tf2_sensor_msgs
 )
 
 add_message_files(

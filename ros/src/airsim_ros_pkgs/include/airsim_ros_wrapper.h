@@ -53,6 +53,9 @@ STRICT_MODE_ON
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2/convert.h>
+#include "tf2/transform_datatypes.h"
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 #include <unordered_map>
 #include <glog/logging.h>
 // #include "nodelet/nodelet.h"
@@ -143,6 +146,10 @@ public:
 
 private:
     VehicleType vehicle_type_;
+    
+    // If set to true the ROS standard coordinate frames are used instead of
+    // the AirSim's default NED.
+    bool use_nwu_std_ = true;
   
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
@@ -348,6 +355,14 @@ private:
     tf2_ros::TransformBroadcaster tf_broadcaster_;
     tf2_ros::StaticTransformBroadcaster static_tf_pub_;
     tf2_ros::Buffer tf_buffer_;
+    
+    // Transformations between NED and NWU 
+    geometry_msgs::TransformStamped trans_ned_nwu_;
+    geometry_msgs::TransformStamped trans_nwu_ned_;
+    
+    // Reference frame names 
+    // The names will be different in the nwu standard
+    std::string frame_name_base_link;
 
     /// ROS params
     double vel_cmd_duration_;
