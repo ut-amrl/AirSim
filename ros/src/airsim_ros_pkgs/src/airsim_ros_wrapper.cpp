@@ -117,24 +117,24 @@ void AirsimROSWrapper::initialize_ros()
 {
 
     // ros params
-    double update_airsim_control_every_n_sec;
     nh_private_.getParam("is_vulkan", is_vulkan_);
-    nh_private_.getParam("update_airsim_control_every_n_sec", update_airsim_control_every_n_sec);
+    nh_private_.getParam("update_airsim_control_every_n_sec", update_airsim_timestep_);
     vel_cmd_duration_ = 0.05; // todo rosparam
     // todo enforce dynamics constraints in this node as well?
     // nh_.getParam("max_vert_vel_", max_vert_vel_);
     // nh_.getParam("max_horz_vel", max_horz_vel_)
 
     create_ros_pubs_from_settings_json();
+
     switch (vehicle_type_) {
       case CAR:
         airsim_control_update_timer_ = nh_private_.createTimer(
-                      ros::Duration(update_airsim_control_every_n_sec), 
+                      ros::Duration(update_airsim_timestep_), 
                         &AirsimROSWrapper::car_state_timer_cb, this);        
         break;
       case MULTIROTOR:
         airsim_control_update_timer_ = nh_private_.createTimer(
-                      ros::Duration(update_airsim_control_every_n_sec), 
+                      ros::Duration(update_airsim_timestep_), 
                         &AirsimROSWrapper::drone_state_timer_cb, this);
         break;
       default:
@@ -156,7 +156,7 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
         
         
 
-  printf("Listening for %s\n", vehicle_name + "/cmd_vel");
+  printf("Listening for %s\n", (vehicle_name + "/cmd_vel").c_str());
   car_ros.vel_cmd_body_frame_cb_std_sub = 
      nh_private_.subscribe<geometry_msgs::Twist>(vehicle_name + 
     "/cmd_vel", 1, 
@@ -592,7 +592,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
   std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
   
   int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
-
+  car_ros_vec_[vehicle_idx].vel_cmd.t = ros::Time::now();
   car_ros_vec_[vehicle_idx].vel_cmd.x = msg->linear.x;
   car_ros_vec_[vehicle_idx].vel_cmd.y = msg->linear.y;
   car_ros_vec_[vehicle_idx].vel_cmd.z = msg->linear.z;
@@ -600,6 +600,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
         msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.is_rate = true;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.yaw_or_rate = msg->angular.z;
+  car_ros_vec_[vehicle_idx].velocity_controller.set_target(car_ros_vec_[vehicle_idx].vel_cmd);
   car_ros_vec_[vehicle_idx].has_vel_cmd = true;
 }
 
@@ -729,6 +730,7 @@ void AirsimROSWrapper::vel_cmd_all_world_frame_cb(const airsim_ros_pkgs::VelCmd&
           car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.yaw_or_rate = 
                 math_common::rad2deg(msg.twist.angular.z);
           car_ros_vec_[vehicle_idx].has_vel_cmd = true;
+        //   printf("Recieved vel cmd\n");
         } 
         break;
       case MULTIROTOR:
@@ -1061,7 +1063,7 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event)
     }
 }
 
-const double CAR_VEL_EPSILON = 0.25;
+const double VEL_CMD_DURATION = 15.0;
 
 void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
 {
@@ -1101,48 +1103,14 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         
 //         car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
 
-        // send control commands from the last callback to airsim
-        if (car_ros.has_vel_cmd) {
-            printf("Processing vel cmd\n");
-            // TODO(Kavan): send control commands to car (use airsim_car_client_)
-            double currentVel = car_ros.curr_car_state.kinematics_estimated.twist.linear.x();
-            double targetVel = car_ros.vel_cmd.x;
-            printf("Velocities %f %f\n", currentVel, targetVel);
-
-            CarApiBase::CarControls controls;
-
-            // For the moment, a really dumb controller, only forward/backward
-            if (currentVel < targetVel - CAR_VEL_EPSILON) {
-                controls.throttle = (targetVel - currentVel) / targetVel;
-                controls.is_manual_gear = true;
-                controls.manual_gear = 1;
-            } else if (currentVel > targetVel + CAR_VEL_EPSILON) {
-                controls.brake = (currentVel - targetVel) / currentVel;
-
-            } else {
-                // Only turn off the vel cmd once we have achieved target velocity
-                // TODO figure out how to maintain speed...
-                // car_ros.has_vel_cmd = false;
-            }
-
-            // handle steering
-            double currentYaw = car_ros.curr_car_state.kinematics_estimated.twist.angular.z();
-            double targetYaw = car_ros.vel_cmd.yaw_mode.yaw_or_rate;
-            printf("Yaws %f %f\n", currentYaw, targetYaw);
-            // For the moment, a really dumb controller, only forward/backward
-            if (currentYaw < targetYaw - CAR_VEL_EPSILON) {
-                controls.steering = (targetYaw - currentYaw) / targetYaw;
-            } else if (currentYaw > targetYaw + CAR_VEL_EPSILON) {
-                controls.steering = (targetYaw - currentYaw) / targetYaw;
-            } else {
-                // Only turn off the vel cmd once we have achieved target velocity
-                // car_ros.has_vel_cmd = false;
-            }
-
-            airsim_car_client_.setCarControls(controls);
+        if (car_ros.has_vel_cmd && (ros::Time::now() - car_ros.vel_cmd.t).toSec() > VEL_CMD_DURATION) {
+            car_ros.has_vel_cmd = false;
+            car_ros.velocity_controller.set_zero_target();            
         }
 
-        // "clear" control cmds
+        // send control commands from the last callback to airsim
+        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, car_ros.curr_car_state.speed, ros::Time::now());
+        airsim_car_client_.setCarControls(controls);
     }
 
     // IMUS

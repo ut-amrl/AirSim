@@ -55,6 +55,7 @@ STRICT_MODE_ON
 #include <tf2_ros/transform_listener.h>
 #include <unordered_map>
 #include <glog/logging.h>
+#include <queue>
 // #include "nodelet/nodelet.h"
 
 // todo move airlib typedefs to separate header file?
@@ -79,6 +80,7 @@ struct SimpleMatrix
 
 struct VelCmd
 {
+    ros::Time t;
     double x;
     double y;
     double z;
@@ -115,6 +117,27 @@ struct GimbalCmd
     //         vehicle_name(vehicle_name), camera_name(camera_name), target_quat(target_quat) {};
 };
 
+struct PIDVelocityController {
+  PIDVelocityController();
+  const double K_p = 0.7;
+  const double K_i = 0.0;
+  const double K_d = 1.0;
+  const double VEL_EPSILON = 0.025;
+  const double VEL_BRAKE_THRESHOLD = 0.65;
+  const double MAINTENANCE_FACTOR = 0.0;
+  const double BRAKING_SCALING_FACTOR = 0.1;
+  double last_integral_;
+  double last_error_;
+  ros::Time last_timestamp_;
+
+  double target_velocity_;
+  double target_steering_;
+
+  void set_target(const VelCmd& cmd);
+  void set_zero_target();
+  msr::airlib::CarApiBase::CarControls get_next(const msr::airlib::Twist& current_twist, float speed, const ros::Time timestep);
+};
+
 class AirsimROSWrapper
 {
 public:
@@ -143,7 +166,7 @@ public:
 
 private:
     VehicleType vehicle_type_;
-  
+
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
     void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
@@ -230,6 +253,8 @@ private:
     void convert_yaml_to_simple_mat(const YAML::Node& node, SimpleMatrix& m) const; // todo ugly
 
 private:
+    double update_airsim_timestep_;
+
     // subscriber / services for ALL robots
     ros::Subscriber vel_cmd_all_body_frame_sub_;
     ros::Subscriber vel_cmd_all_world_frame_sub_;
@@ -296,6 +321,7 @@ private:
         sensor_msgs::NavSatFix gps_sensor_msg;
         bool has_vel_cmd;
         VelCmd vel_cmd;
+        PIDVelocityController velocity_controller;
 
         std::string odom_frame_id;
     };
