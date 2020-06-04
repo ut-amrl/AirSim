@@ -73,11 +73,17 @@ void AirsimROSWrapper::initialize_airsim()
           airsim_car_client_.confirmConnection();
           airsim_car_client_images_.confirmConnection();
           airsim_car_client_lidar_.confirmConnection();
-
-          for (const auto& vehicle_name : vehicle_names_){
+          
+          if (use_api_control_) {
+            for (const auto& vehicle_name : vehicle_names_){
+                airsim_car_client_.enableApiControl(true, vehicle_name);  
               airsim_car_client_.enableApiControl(true, vehicle_name);  
-              // todo exposes as rosservice?
+                airsim_car_client_.enableApiControl(true, vehicle_name);  
+                // todo exposes as rosservice?
+                airsim_car_client_.armDisarm(true, vehicle_name); 
               airsim_car_client_.armDisarm(true, vehicle_name); 
+                airsim_car_client_.armDisarm(true, vehicle_name); 
+            }
           }
 
           origin_geo_point_ = airsim_car_client_.getHomeGeoPoint("");
@@ -87,10 +93,16 @@ void AirsimROSWrapper::initialize_airsim()
           airsim_client_images_.confirmConnection();
           airsim_client_lidar_.confirmConnection();
 
-          for (const auto& vehicle_name : vehicle_names_){
+          if (use_api_control_) {
+            for (const auto& vehicle_name : vehicle_names_){
+                airsim_client_.enableApiControl(true, vehicle_name);  
               airsim_client_.enableApiControl(true, vehicle_name);  
-              // todo exposes as rosservice?
+                airsim_client_.enableApiControl(true, vehicle_name);  
+                // todo exposes as rosservice?
+                airsim_client_.armDisarm(true, vehicle_name); 
               airsim_client_.armDisarm(true, vehicle_name); 
+                airsim_client_.armDisarm(true, vehicle_name); 
+            }
           }
 
           origin_geo_point_ = airsim_client_.getHomeGeoPoint("");
@@ -119,6 +131,7 @@ void AirsimROSWrapper::initialize_ros()
     // ros params
     nh_private_.getParam("is_vulkan", is_vulkan_);
     nh_private_.getParam("update_airsim_control_every_n_sec", update_airsim_timestep_);
+    nh_private_.getParam("use_api_control", use_api_control_);
     vel_cmd_duration_ = 0.05; // todo rosparam
     // todo enforce dynamics constraints in this node as well?
     // nh_.getParam("max_vert_vel_", max_vert_vel_);
@@ -1003,7 +1016,7 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event)
             multirotor_ros.global_gps_pub.publish(multirotor_ros.gps_sensor_msg);
 
             // send control commands from the last callback to airsim
-            if (multirotor_ros.has_vel_cmd)
+            if (multirotor_ros.has_vel_cmd && use_api_control_)
             {
                 std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
                 airsim_client_.moveByVelocityAsync(multirotor_ros.vel_cmd.x, multirotor_ros.vel_cmd.y, multirotor_ros.vel_cmd.z, vel_cmd_duration_, 
@@ -1103,14 +1116,20 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         
 //         car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
 
-        if (car_ros.has_vel_cmd && (ros::Time::now() - car_ros.vel_cmd.t).toSec() > VEL_CMD_DURATION) {
-            car_ros.has_vel_cmd = false;
+        if (use_api_control_) {
+            if (car_ros.has_vel_cmd && (ros::Time::now() - car_ros.vel_cmd.t).toSec() > VEL_CMD_DURATION) {
+                car_ros.has_vel_cmd = false;
+                car_ros.velocity_controller.set_zero_target();            
             car_ros.velocity_controller.set_zero_target();            
-        }
+                car_ros.velocity_controller.set_zero_target();            
+            }
 
-        // send control commands from the last callback to airsim
-        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, car_ros.curr_car_state.speed, ros::Time::now());
+            // send control commands from the last callback to airsim
+            CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(car_ros.curr_car_state.kinematics_estimated.twist, car_ros.curr_car_state.speed, ros::Time::now());
+            airsim_car_client_.setCarControls(controls); 
         airsim_car_client_.setCarControls(controls);
+            airsim_car_client_.setCarControls(controls); 
+        }
     }
 
     // IMUS

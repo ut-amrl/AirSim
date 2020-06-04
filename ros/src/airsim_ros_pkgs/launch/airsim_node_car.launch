@@ -12,6 +12,7 @@
 		<param name="update_lidar_every_n_sec" type="double" value="0.01" />
 		<param name="host_ip" type="string" value="$(arg host)" />
 		<param name="vehicle_type" type="string" value="$(arg vehicle_type)" />
+		<param name="use_api_control" type="bool" value="false" />
 	</node>
 
 	<!-- Static transforms -->

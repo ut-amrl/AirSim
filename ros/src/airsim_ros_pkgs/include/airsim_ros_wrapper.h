@@ -254,6 +254,7 @@ private:
 
 private:
     double update_airsim_timestep_;
+    bool use_api_control_;
 
     // subscriber / services for ALL robots
     ros::Subscriber vel_cmd_all_body_frame_sub_;
