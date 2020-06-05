@@ -215,16 +215,22 @@ private:
 
     /// ROS tf broadcasters
     void publish_camera_tf(const ImageResponse& img_response, const ros::Time& ros_time, const std::string& frame_id, const std::string& child_frame_id);
-    void publish_odom_tf(const nav_msgs::Odometry& odom_ned_msg);
+    void publish_odom_tf(const nav_msgs::Odometry& odom_msg);
 
     /// camera helper methods
-    sensor_msgs::CameraInfo generate_cam_info(const std::string& camera_name, const CameraSetting& camera_setting, const CaptureSetting& capture_setting) const;
+    sensor_msgs::CameraInfo generate_cam_info(const std::string& camera_name, 
+const CameraSetting& camera_setting, const CaptureSetting& capture_setting) 
+const;
     cv::Mat manual_decode_depth(const ImageResponse& img_response) const;
 
-    sensor_msgs::ImagePtr get_img_msg_from_response(const ImageResponse& img_response, const ros::Time curr_ros_time, const std::string frame_id);
-    sensor_msgs::ImagePtr get_depth_img_msg_from_response(const ImageResponse& img_response, const ros::Time curr_ros_time, const std::string frame_id);
+    sensor_msgs::ImagePtr get_img_msg_from_response(const ImageResponse& 
+img_response, const ros::Time curr_ros_time, const std::string frame_id);
+    sensor_msgs::ImagePtr get_depth_img_msg_from_response(const ImageResponse& 
+img_response, const ros::Time curr_ros_time, const std::string frame_id);
     
-    void process_and_publish_img_response(const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name);
+    void process_and_publish_img_response(const std::vector<ImageResponse>& 
+          img_response_vec, const int img_response_idx, 
+          const std::string& vehicle_name);
 
     
     // methods which parse setting json ang generate ros pubsubsrv
@@ -234,30 +240,45 @@ private:
     // Adds the advertisers, subscribers, and services specific to multirotors
     void add_ros_multirotor(const std::string& vehicle_name);
     void create_ros_pubs_from_settings_json();
-    void append_static_camera_tf(const std::string& vehicle_name, const std::string& camera_name, const CameraSetting& camera_setting);
-    void append_static_lidar_tf(const std::string& vehicle_name, const std::string& lidar_name, const LidarSetting& lidar_setting);
-    void append_static_vehicle_tf(const std::string& vehicle_name, const VehicleSetting& vehicle_setting);
+    void append_static_camera_tf(const std::string& vehicle_name, const 
+         std::string& camera_name, const CameraSetting& camera_setting);
+    void append_static_lidar_tf(const std::string& vehicle_name, const 
+         std::string& lidar_name, const LidarSetting& lidar_setting);
+    void append_static_vehicle_tf(const std::string& vehicle_name, const 
+          VehicleSetting& vehicle_setting);
     void set_nans_to_zeros_in_pose(VehicleSetting& vehicle_setting) const;
-    void set_nans_to_zeros_in_pose(const VehicleSetting& vehicle_setting, CameraSetting& camera_setting) const;
-    void set_nans_to_zeros_in_pose(const VehicleSetting& vehicle_setting, LidarSetting& lidar_setting) const;
+    void set_nans_to_zeros_in_pose(const VehicleSetting& vehicle_setting, 
+          CameraSetting& camera_setting) const;
+    void set_nans_to_zeros_in_pose(const VehicleSetting& vehicle_setting, 
+          LidarSetting& lidar_setting) const;
 
     /// utils. todo parse into an Airlib<->ROS conversion class
-    tf2::Quaternion get_tf2_quat(const msr::airlib::Quaternionr& airlib_quat) const;
-    msr::airlib::Quaternionr get_airlib_quat(const geometry_msgs::Quaternion& geometry_msgs_quat) const;
-    msr::airlib::Quaternionr get_airlib_quat(const tf2::Quaternion& tf2_quat) const;
+    tf2::Quaternion get_tf2_quat(const msr::airlib::Quaternionr& airlib_quat) 
+          const;
+    msr::airlib::Quaternionr get_airlib_quat(const geometry_msgs::Quaternion& 
+          geometry_msgs_quat) const;
+    msr::airlib::Quaternionr get_airlib_quat(const tf2::Quaternion& tf2_quat) 
+          const;
 
     nav_msgs::Odometry get_odom_msg_from_airsim_state(
                   const msr::airlib::MultirotorState& drone_state) const;
     nav_msgs::Odometry get_odom_msg_from_airsim_state(
                   const msr::airlib::CarApiBase::CarState& car_state) const;
-    airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
-    sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
-    sensor_msgs::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& imu_data);
-    sensor_msgs::PointCloud2 get_lidar_msg_from_airsim(const msr::airlib::LidarData& lidar_data) const;
+    airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(const 
+          msr::airlib::GeoPoint& geo_point) const;
+    sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const 
+          msr::airlib::GeoPoint& geo_point) const;
+    sensor_msgs::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& 
+          imu_data);
+    sensor_msgs::PointCloud2 get_lidar_msg_from_airsim(const 
+          msr::airlib::LidarData& lidar_data) const;
 
-    // not used anymore, but can be useful in future with an unreal camera calibration environment
-    void read_params_from_yaml_and_fill_cam_info_msg(const std::string& file_name, sensor_msgs::CameraInfo& cam_info) const;
-    void convert_yaml_to_simple_mat(const YAML::Node& node, SimpleMatrix& m) const; // todo ugly
+    // not used anymore, but can be useful in future with an unreal camera 
+    // calibration environment
+    void read_params_from_yaml_and_fill_cam_info_msg(const std::string& 
+            file_name, sensor_msgs::CameraInfo& cam_info) const;
+    void convert_yaml_to_simple_mat(const YAML::Node& node, SimpleMatrix& m) 
+            const; // todo ugly
 
 private:
     double update_airsim_timestep_;
@@ -269,7 +290,8 @@ private:
     ros::ServiceServer takeoff_all_srvr_;
     ros::ServiceServer land_all_srvr_;
 
-    // todo - subscriber / services for a GROUP of robots, which is defined by a list of `vehicle_name`s passed in the ros msg / srv request
+    // todo - subscriber / services for a GROUP of robots, which is defined by a 
+    // list of `vehicle_name`s passed in the ros msg / srv request
     ros::Subscriber vel_cmd_group_body_frame_sub_;
     ros::Subscriber vel_cmd_group_world_frame_sub_;
     ros::ServiceServer takeoff_group_srvr_;
@@ -294,7 +316,7 @@ private:
         /// State
         msr::airlib::MultirotorState curr_drone_state;
         // bool in_air_; // todo change to "status" and keep track of this
-        nav_msgs::Odometry curr_odom_ned;
+        nav_msgs::Odometry curr_odom;
         sensor_msgs::NavSatFix gps_sensor_msg;
         bool has_vel_cmd;
         VelCmd vel_cmd;
@@ -325,7 +347,7 @@ private:
 
         /// State
         msr::airlib::CarApiBase::CarState curr_car_state;
-        nav_msgs::Odometry curr_odom_ned;
+        nav_msgs::Odometry curr_odom;
         sensor_msgs::NavSatFix gps_sensor_msg;
         bool has_vel_cmd;
         VelCmd vel_cmd;

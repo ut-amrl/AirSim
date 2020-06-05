@@ -190,7 +190,7 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
   car_ros.vehicle_name = vehicle_name;
   car_ros.odom_local_ned_pub = 
         nh_private_.advertise<nav_msgs::Odometry>(
-        vehicle_name + frame_name_base_link, 10);
+        vehicle_name + "/odom", 10);
   car_ros.global_gps_pub = 
         nh_private_.advertise<sensor_msgs::NavSatFix>(
         vehicle_name + "/global_gps", 10);
@@ -234,7 +234,7 @@ void AirsimROSWrapper::add_ros_multirotor(const std::string& vehicle_name) {
   multirotor_ros.vehicle_name = vehicle_name;
   multirotor_ros.odom_local_ned_pub = 
         nh_private_.advertise<nav_msgs::Odometry>(
-        vehicle_name + frame_name_base_link, 10);
+        vehicle_name + "/odom", 10);
   multirotor_ros.global_gps_pub = 
         nh_private_.advertise<sensor_msgs::NavSatFix>(
         vehicle_name + "/global_gps", 10);
@@ -976,61 +976,139 @@ math_common::deg2rad(gimbal_angle_euler_cmd_msg.yaw));
 nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(const 
 msr::airlib::MultirotorState& drone_state) const
 {
-    nav_msgs::Odometry odom_ned_msg;
-    // odom_ned_msg.header.frame_id = world_frame_id_;
-    // odom_ned_msg.child_frame_id = "/airsim/odom_local_ned"; // todo make 
+    nav_msgs::Odometry odom_msg;
+    // odom_msg.header.frame_id = world_frame_id_;
+    // odom_msg.child_frame_id = "/airsim/odom_local_ned"; // todo make 
     // param
 
-    odom_ned_msg.pose.pose.position.x = drone_state.getPosition().x();
-    odom_ned_msg.pose.pose.position.y = drone_state.getPosition().y();
-    odom_ned_msg.pose.pose.position.z = drone_state.getPosition().z();
-    odom_ned_msg.pose.pose.orientation.x = drone_state.getOrientation().x();
-    odom_ned_msg.pose.pose.orientation.y = drone_state.getOrientation().y();
-    odom_ned_msg.pose.pose.orientation.z = drone_state.getOrientation().z();
-    odom_ned_msg.pose.pose.orientation.w = drone_state.getOrientation().w();
+    odom_msg.pose.pose.position.x = drone_state.getPosition().x();
+    odom_msg.pose.pose.position.y = drone_state.getPosition().y();
+    odom_msg.pose.pose.position.z = drone_state.getPosition().z();
+    odom_msg.pose.pose.orientation.x = drone_state.getOrientation().x();
+    odom_msg.pose.pose.orientation.y = drone_state.getOrientation().y();
+    odom_msg.pose.pose.orientation.z = drone_state.getOrientation().z();
+    odom_msg.pose.pose.orientation.w = drone_state.getOrientation().w();
 
-    odom_ned_msg.twist.twist.linear.x = 
-drone_state.kinematics_estimated.twist.linear.x();
-    odom_ned_msg.twist.twist.linear.y = 
-drone_state.kinematics_estimated.twist.linear.y();
-    odom_ned_msg.twist.twist.linear.z = 
-drone_state.kinematics_estimated.twist.linear.z();
-    odom_ned_msg.twist.twist.angular.x = 
-drone_state.kinematics_estimated.twist.angular.x();
-    odom_ned_msg.twist.twist.angular.y = 
-drone_state.kinematics_estimated.twist.angular.y();
-    odom_ned_msg.twist.twist.angular.z = 
-drone_state.kinematics_estimated.twist.angular.z();
+    odom_msg.twist.twist.linear.x = 
+              drone_state.kinematics_estimated.twist.linear.x();
+    odom_msg.twist.twist.linear.y = 
+              drone_state.kinematics_estimated.twist.linear.y();
+    odom_msg.twist.twist.linear.z = 
+              drone_state.kinematics_estimated.twist.linear.z();
+    odom_msg.twist.twist.angular.x = 
+              drone_state.kinematics_estimated.twist.angular.x();
+    odom_msg.twist.twist.angular.y = 
+              drone_state.kinematics_estimated.twist.angular.y();
+    odom_msg.twist.twist.angular.z = 
+              drone_state.kinematics_estimated.twist.angular.z();
+
+
+    if (use_nwu_std_) {   
+      tf2::Transform tf_ned_nwu, tf_nwu_ned;
+      tf2::Transform tf_OdomNED_BaseNED, tf_OdomNWU_BaseNWU;
+      tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
+      tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
+      tf2::convert(odom_msg.pose.pose, tf_OdomNED_BaseNED);
+      
+      tf_OdomNWU_BaseNWU = tf_nwu_ned * tf_OdomNED_BaseNED * tf_ned_nwu;
+
+      odom_msg.pose.pose.position.x = tf_OdomNWU_BaseNWU.getOrigin().getX();
+      odom_msg.pose.pose.position.y = tf_OdomNWU_BaseNWU.getOrigin().getY();
+      odom_msg.pose.pose.position.z = tf_OdomNWU_BaseNWU.getOrigin().getZ();
+      odom_msg.pose.pose.orientation = 
+                                tf2::toMsg(tf_OdomNWU_BaseNWU.getRotation());
+      
+      // Convert the twist messages. The twist messages first need to be 
+      // converted from NED to NWU. Then they are transformed from the 
+      // odom frame to the base_link frame (child_frame of the odometry msg) 
+      // as this is the standard given ROS documentation for the odometry
+      // message.
+      geometry_msgs::TransformStamped odom_inv_tf_msg;
+      tf2::convert(tf_OdomNWU_BaseNWU.inverse(), odom_inv_tf_msg.transform);
+      
+      tf2::doTransform(odom_msg.twist.twist.linear, 
+                       odom_msg.twist.twist.linear,                       
+                       trans_nwu_ned_);
+      tf2::doTransform(odom_msg.twist.twist.linear, 
+                       odom_msg.twist.twist.linear,                       
+                       odom_inv_tf_msg);
+            
+      tf2::doTransform(odom_msg.twist.twist.angular, 
+                       odom_msg.twist.twist.angular,                       
+                       trans_nwu_ned_);
+      tf2::doTransform(odom_msg.twist.twist.angular, 
+                       odom_msg.twist.twist.angular,                       
+                       odom_inv_tf_msg);
+    }
  
-    return odom_ned_msg;
+    return odom_msg;
 }
 
 
 nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
         const msr::airlib::CarApiBase::CarState& car_state) const {
-    nav_msgs::Odometry odom_ned_msg;
-    // odom_ned_msg.header.frame_id = world_frame_id_;
+    nav_msgs::Odometry odom_msg;
+    // odom_msg.header.frame_id = world_frame_id_;
     // todo make param
-    // odom_ned_msg.child_frame_id = "/airsim/odom_local_ned";  
+    // odom_msg.child_frame_id = "/airsim/odom_local_ned";  
     const msr::airlib_rpclib::RpcLibAdapatorsBase::KinematicsState& kinematics =
         car_state.kinematics_estimated;
   
-    odom_ned_msg.pose.pose.position.x = kinematics.position.x_val;
-    odom_ned_msg.pose.pose.position.y = kinematics.position.y_val;
-    odom_ned_msg.pose.pose.position.z = kinematics.position.z_val;
-    odom_ned_msg.pose.pose.orientation.x = kinematics.orientation.x_val;
-    odom_ned_msg.pose.pose.orientation.y = kinematics.orientation.y_val;
-    odom_ned_msg.pose.pose.orientation.z = kinematics.orientation.z_val;
-    odom_ned_msg.pose.pose.orientation.w = kinematics.orientation.w_val;
+    odom_msg.pose.pose.position.x = kinematics.position.x_val;
+    odom_msg.pose.pose.position.y = kinematics.position.y_val;
+    odom_msg.pose.pose.position.z = kinematics.position.z_val;
+    odom_msg.pose.pose.orientation.x = kinematics.orientation.x_val;
+    odom_msg.pose.pose.orientation.y = kinematics.orientation.y_val;
+    odom_msg.pose.pose.orientation.z = kinematics.orientation.z_val;
+    odom_msg.pose.pose.orientation.w = kinematics.orientation.w_val;
 
-    odom_ned_msg.twist.twist.linear.x = kinematics.linear_velocity.x_val;
-    odom_ned_msg.twist.twist.linear.y = kinematics.linear_velocity.y_val;
-    odom_ned_msg.twist.twist.linear.z = kinematics.linear_velocity.z_val;
-    odom_ned_msg.twist.twist.angular.x = kinematics.angular_velocity.x_val;
-    odom_ned_msg.twist.twist.angular.y = kinematics.angular_velocity.y_val;
-    odom_ned_msg.twist.twist.angular.z = kinematics.angular_velocity.z_val;
+    odom_msg.twist.twist.linear.x = kinematics.linear_velocity.x_val;
+    odom_msg.twist.twist.linear.y = kinematics.linear_velocity.y_val;
+    odom_msg.twist.twist.linear.z = kinematics.linear_velocity.z_val;
+    odom_msg.twist.twist.angular.x = kinematics.angular_velocity.x_val;
+    odom_msg.twist.twist.angular.y = kinematics.angular_velocity.y_val;
+    odom_msg.twist.twist.angular.z = kinematics.angular_velocity.z_val;
     
-    return odom_ned_msg;
+    
+    if (use_nwu_std_) {   
+      tf2::Transform tf_ned_nwu, tf_nwu_ned;
+      tf2::Transform tf_OdomNED_BaseNED, tf_OdomNWU_BaseNWU;
+      tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
+      tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
+      tf2::convert(odom_msg.pose.pose, tf_OdomNED_BaseNED);
+      
+      tf_OdomNWU_BaseNWU = tf_nwu_ned * tf_OdomNED_BaseNED * tf_ned_nwu;
+
+      odom_msg.pose.pose.position.x = tf_OdomNWU_BaseNWU.getOrigin().getX();
+      odom_msg.pose.pose.position.y = tf_OdomNWU_BaseNWU.getOrigin().getY();
+      odom_msg.pose.pose.position.z = tf_OdomNWU_BaseNWU.getOrigin().getZ();
+      odom_msg.pose.pose.orientation = 
+                                tf2::toMsg(tf_OdomNWU_BaseNWU.getRotation());
+      
+      // Convert the twist messages. The twist messages first need to be 
+      // converted from NED to NWU. Then they are transformed from the 
+      // odom frame to the base_link frame (child_frame of the odometry msg) 
+      // as this is the standard given ROS documentation for the odometry
+      // message.
+      geometry_msgs::TransformStamped odom_inv_tf_msg;
+      tf2::convert(tf_OdomNWU_BaseNWU.inverse(), odom_inv_tf_msg.transform);
+      
+      tf2::doTransform(odom_msg.twist.twist.linear, 
+                       odom_msg.twist.twist.linear,                       
+                       trans_nwu_ned_);
+      tf2::doTransform(odom_msg.twist.twist.linear, 
+                       odom_msg.twist.twist.linear,                       
+                       odom_inv_tf_msg);
+            
+      tf2::doTransform(odom_msg.twist.twist.angular, 
+                       odom_msg.twist.twist.angular,                       
+                       trans_nwu_ned_);
+      tf2::doTransform(odom_msg.twist.twist.angular, 
+                       odom_msg.twist.twist.angular,                       
+                       odom_inv_tf_msg);
+    }
+    
+    return odom_msg;
 }
 
 //https://docs.ros.org/jade/api/sensor_msgs/html/
@@ -1112,35 +1190,25 @@ msr::airlib::ImuBase::Output& imu_data)
     return imu_msg;
 }
 
-void AirsimROSWrapper::publish_odom_tf(const nav_msgs::Odometry& odom_ned_msg)
+void AirsimROSWrapper::publish_odom_tf(const nav_msgs::Odometry& odom_msg)
 {
     geometry_msgs::TransformStamped odom_tf;
-    odom_tf.header = odom_ned_msg.header;
-    odom_tf.child_frame_id = odom_ned_msg.child_frame_id; 
-    odom_tf.transform.translation.x = odom_ned_msg.pose.pose.position.x;
-    odom_tf.transform.translation.y = odom_ned_msg.pose.pose.position.y;
-    odom_tf.transform.translation.z = odom_ned_msg.pose.pose.position.z;
-    odom_tf.transform.rotation.x = odom_ned_msg.pose.pose.orientation.x;
-    odom_tf.transform.rotation.y = odom_ned_msg.pose.pose.orientation.y;
-    odom_tf.transform.rotation.z = odom_ned_msg.pose.pose.orientation.z;
-    odom_tf.transform.rotation.w = odom_ned_msg.pose.pose.orientation.w;
-    
-    if (use_nwu_std_) {   
-      tf2::Transform tf_ned_nwu, tf_nwu_ned;
-      tf2::Transform tf_OdomNED_BaseNED, tf_OdomNWU_BaseNWU;
-      tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
-      tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
-      tf2::convert(odom_tf.transform, tf_OdomNED_BaseNED);
-      
-      tf_OdomNWU_BaseNWU = tf_nwu_ned * tf_OdomNED_BaseNED * tf_ned_nwu;
-      tf2::convert(tf_OdomNWU_BaseNWU, odom_tf.transform);
-    }
+    odom_tf.header = odom_msg.header;
+    odom_tf.child_frame_id = odom_msg.child_frame_id; 
+    odom_tf.transform.translation.x = odom_msg.pose.pose.position.x;
+    odom_tf.transform.translation.y = odom_msg.pose.pose.position.y;
+    odom_tf.transform.translation.z = odom_msg.pose.pose.position.z;
+    odom_tf.transform.rotation.x = odom_msg.pose.pose.orientation.x;
+    odom_tf.transform.rotation.y = odom_msg.pose.pose.orientation.y;
+    odom_tf.transform.rotation.z = odom_msg.pose.pose.orientation.z;
+    odom_tf.transform.rotation.w = odom_msg.pose.pose.orientation.w;
     
     tf_broadcaster_.sendTransform(odom_tf);
 }
 
 airsim_ros_pkgs::GPSYaw 
-AirsimROSWrapper::get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& 
+AirsimROSWrapper::get_gps_msg_from_airsim_geo_point(const 
+msr::airlib::GeoPoint& 
 geo_point) const
 {
     airsim_ros_pkgs::GPSYaw gps_msg;
@@ -1198,13 +1266,13 @@ airsim_client_.getMultirotorState(multirotor_ros.vehicle_name);
             ros::Time curr_ros_time = ros::Time::now();
 
             // convert airsim drone state to ROS msgs
-            multirotor_ros.curr_odom_ned = 
+            multirotor_ros.curr_odom = 
 get_odom_msg_from_airsim_state(multirotor_ros.curr_drone_state);
-            multirotor_ros.curr_odom_ned.header.frame_id = 
+            multirotor_ros.curr_odom.header.frame_id = 
 multirotor_ros.vehicle_name;
-            multirotor_ros.curr_odom_ned.child_frame_id = 
+            multirotor_ros.curr_odom.child_frame_id = 
 multirotor_ros.odom_frame_id;
-            multirotor_ros.curr_odom_ned.header.stamp = curr_ros_time;
+            multirotor_ros.curr_odom.header.stamp = curr_ros_time;
 
             multirotor_ros.gps_sensor_msg = 
 get_gps_sensor_msg_from_airsim_geo_point(multirotor_ros.curr_drone_state.
@@ -1213,8 +1281,9 @@ gps_location);
 
             // publish to ROS!  
             
-multirotor_ros.odom_local_ned_pub.publish(multirotor_ros.curr_odom_ned);
-            publish_odom_tf(multirotor_ros.curr_odom_ned);
+            multirotor_ros.odom_local_ned_pub.publish(
+                                    multirotor_ros.curr_odom);
+            publish_odom_tf(multirotor_ros.curr_odom);
             
 multirotor_ros.global_gps_pub.publish(multirotor_ros.gps_sensor_msg);
 
@@ -1307,11 +1376,11 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         ros::Time curr_ros_time = ros::Time::now();
 
         // convert airsim drone state to ROS msgs
-        car_ros.curr_odom_ned = 
+        car_ros.curr_odom = 
           get_odom_msg_from_airsim_state(car_ros.curr_car_state);
-        car_ros.curr_odom_ned.header.frame_id = car_ros.vehicle_name;
-        car_ros.curr_odom_ned.child_frame_id = car_ros.odom_frame_id;
-        car_ros.curr_odom_ned.header.stamp = curr_ros_time;
+        car_ros.curr_odom.header.frame_id = car_ros.vehicle_name;
+        car_ros.curr_odom.child_frame_id = car_ros.odom_frame_id;
+        car_ros.curr_odom.header.stamp = curr_ros_time;
 
         // TODO(Sadegh): Get GPS readings for the car. There is no GPS data
         // in the car state
@@ -1322,8 +1391,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
 
         // publish to ROS!  
         
-        car_ros.odom_local_ned_pub.publish(car_ros.curr_odom_ned);
-        publish_odom_tf(car_ros.curr_odom_ned);
+        car_ros.odom_local_ned_pub.publish(car_ros.curr_odom);
+        publish_odom_tf(car_ros.curr_odom);
         
 //         car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
 
