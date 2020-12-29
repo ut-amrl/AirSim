@@ -73,10 +73,10 @@ AirsimROSWrapper::AirsimROSWrapper(const ros::NodeHandle& nh,
   trans_nwu_ned_.header.frame_id = "nwu";
 
   if (use_nwu_std_) {
-    frame_name_base_link = "/base_link";
+    frame_name_base_link_ = "/base_link";
     world_frame_id_ = "map";
   } else {
-    frame_name_base_link = "/odom_local_ned";
+    frame_name_base_link_ = "/odom_local_ned";
     world_frame_id_ = "world_ned";  // todo rosparam?
   }
 
@@ -181,7 +181,7 @@ void AirsimROSWrapper::initialize_ros() {
 
 void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
   CarROS car_ros;
-  car_ros.odom_frame_id = vehicle_name + frame_name_base_link;
+  car_ros.odom_frame_id = vehicle_name + frame_name_base_link_;
   car_ros.vehicle_name = vehicle_name;
   car_ros.odom_local_ned_pub =
       nh_private_.advertise<nav_msgs::Odometry>(vehicle_name + "/odom", 10);
@@ -224,7 +224,7 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
 
 void AirsimROSWrapper::add_ros_multirotor(const std::string& vehicle_name) {
   MultiRotorROS multirotor_ros;
-  multirotor_ros.odom_frame_id = vehicle_name + frame_name_base_link;
+  multirotor_ros.odom_frame_id = vehicle_name + frame_name_base_link_;
   multirotor_ros.vehicle_name = vehicle_name;
   multirotor_ros.odom_local_ned_pub =
       nh_private_.advertise<nav_msgs::Odometry>(vehicle_name + "/odom", 10);
@@ -352,11 +352,12 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
     }
     idx++;
 
-    // TODO(srabiee): add in
-    // std::vector<ImageRequest> current_image_request_vec;
-    // current_image_request_vec.clear();
+    std::vector<ImageRequest> current_image_request_vec;
+    current_image_request_vec.clear();
 
     // iterate over camera map std::map<std::string, CameraSetting> cameras;
+    // This is an initial pass to extract all transformations between cameras
+    // and detect stereo pairs
     for (auto& curr_camera_elem : vehicle_setting->cameras) {
       auto& camera_setting = curr_camera_elem.second;
       auto& curr_camera_name = curr_camera_elem.first;
@@ -364,11 +365,39 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
       set_nans_to_zeros_in_pose(*vehicle_setting, camera_setting);
       append_static_camera_tf(
           curr_vehicle_name, curr_camera_name, camera_setting);
-      // camera_setting.gimbal
+    }
 
-      // TODO(srabiee): remove
-      std::vector<ImageRequest> current_image_request_vec;
-      current_image_request_vec.clear();
+    // Go through the generated static tf messages and extract the
+    // transormation between the stereo pair if one exists
+    tf2::Transform left_cam_tf_body, right_cam_tf_body, left_cam_tf_right_cam;
+    int pair_count = 0;
+    for (const auto& tf_msg : static_tf_msg_vec_) {
+      if (tf_msg.header.frame_id == curr_vehicle_name + frame_name_base_link_) {
+        if (tf_msg.child_frame_id == "StereoLeft_body/static") {
+          tf2::convert(tf_msg.transform, left_cam_tf_body);
+          pair_count++;
+        } else if (tf_msg.child_frame_id == "StereoRight_body/static") {
+          tf2::convert(tf_msg.transform, right_cam_tf_body);
+          pair_count++;
+        }
+      }
+    }
+
+    if (pair_count == 2) {
+      left_cam_tf_right_cam = left_cam_tf_body * right_cam_tf_body.inverse();
+      vehicle_name_stereo_baseline_map_[curr_vehicle_name] =
+          left_cam_tf_right_cam.getOrigin().getY();
+    }
+
+    // iterate over camera map std::map<std::string, CameraSetting> cameras;
+    // This is the second pass to actually generate the publishers and camera
+    // info msgs
+    for (auto& curr_camera_elem : vehicle_setting->cameras) {
+      auto& camera_setting = curr_camera_elem.second;
+      auto& curr_camera_name = curr_camera_elem.first;
+      // vehicle_setting_vec_.push_back(*vehicle_setting.get());
+      set_nans_to_zeros_in_pose(*vehicle_setting, camera_setting);
+      // camera_setting.gimbal
 
       // iterate over capture_setting std::map<int, CaptureSetting>
       // capture_settings
@@ -411,19 +440,16 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
                       "/camera_info",
                   10));
 
-          camera_info_msg_vec_.push_back(generate_cam_info(
-              curr_camera_name, camera_setting, capture_setting));
+          camera_info_msg_vec_.push_back(generate_cam_info(curr_vehicle_name,
+                                                           curr_camera_name,
+                                                           camera_setting,
+                                                           capture_setting));
         }
       }
       // push back pair (vector of image captures, current vehicle name)
-
-      //   TODO(srabiee): remove
-      airsim_img_request_vehicle_name_pair_vec_.push_back(
-          std::make_pair(current_image_request_vec, curr_vehicle_name));
     }
-    // TODO(srabiee): add in
-    // airsim_img_request_vehicle_name_pair_vec_.push_back(
-    //     std::make_pair(current_image_request_vec, curr_vehicle_name));
+    airsim_img_request_vehicle_name_pair_vec_.push_back(
+        std::make_pair(current_image_request_vec, curr_vehicle_name));
 
     // iterate over sensors std::map<std::string,
     // std::unique_ptr<SensorSetting>> sensors;
@@ -937,8 +963,8 @@ void AirsimROSWrapper::gimbal_angle_quat_cmd_cb(
 
 // todo support multiple gimbal commands
 // 1. find quaternion of default gimbal pose
-// 2. forward multiply with quaternion equivalent to desired euler commands (in
-// degrees)
+// 2. forward multiply with quaternion equivalent to desired euler commands
+// (in degrees)
 // 3. call airsim client's setcameraorientation which sets camera orientation
 // wrt world (or takeoff?) ned frame. todo
 void AirsimROSWrapper::gimbal_angle_euler_cmd_cb(
@@ -1517,8 +1543,8 @@ void AirsimROSWrapper::append_static_lidar_tf(
     const LidarSetting& lidar_setting) {
   geometry_msgs::TransformStamped lidar_tf_msg;
   lidar_tf_msg.header.frame_id =
-      vehicle_name + frame_name_base_link;  // todo
-                                            // multiple drones
+      vehicle_name + frame_name_base_link_;  // todo
+                                             // multiple drones
   lidar_tf_msg.child_frame_id = lidar_name;
   lidar_tf_msg.transform.translation.x = lidar_setting.position.x();
   lidar_tf_msg.transform.translation.y = lidar_setting.position.y();
@@ -1551,7 +1577,7 @@ void AirsimROSWrapper::append_static_camera_tf(
     const std::string& camera_name,
     const CameraSetting& camera_setting) {
   geometry_msgs::TransformStamped static_cam_tf_body_msg;
-  static_cam_tf_body_msg.header.frame_id = vehicle_name + frame_name_base_link;
+  static_cam_tf_body_msg.header.frame_id = vehicle_name + frame_name_base_link_;
   static_cam_tf_body_msg.child_frame_id = camera_name + "_body/static";
   static_cam_tf_body_msg.transform.translation.x = camera_setting.position.x();
   static_cam_tf_body_msg.transform.translation.y = camera_setting.position.y();
@@ -1617,15 +1643,6 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent& event) {
     int image_response_idx = 0;
     for (const auto& airsim_img_request_vehicle_name_pair :
          airsim_img_request_vehicle_name_pair_vec_) {
-      // TODO(srabiee): clean
-      std::cout << "Img requests for vehicle: "
-                << airsim_img_request_vehicle_name_pair.second << std::endl;
-      for (const auto& img_request :
-           airsim_img_request_vehicle_name_pair.first) {
-        std::cout << img_request.camera_name << ", ";
-      }
-      std::cout << std::endl;
-
       std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
       switch (vehicle_type_) {
         case CAR: {
@@ -1746,7 +1763,8 @@ cv::Mat AirsimROSWrapper::manual_decode_depth(
 sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(
     const ImageResponse& img_response,
     const ros::Time curr_ros_time,
-    const std::string frame_id) {
+    const std::string frame_id,
+    const bool& use_img_response_time) {
   sensor_msgs::ImagePtr img_msg_ptr = boost::make_shared<sensor_msgs::Image>();
   img_msg_ptr->data = img_response.image_data_uint8;
 
@@ -1754,7 +1772,11 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(
                     (img_response.width * img_response.height);
   img_msg_ptr->step = img_response.width * channel_num;
 
-  img_msg_ptr->header.stamp = make_ts(img_response.time_stamp);
+  if (use_img_response_time) {
+    img_msg_ptr->header.stamp = make_ts(img_response.time_stamp);
+  } else {
+    img_msg_ptr->header.stamp = curr_ros_time;
+  }
   img_msg_ptr->header.frame_id = frame_id;
   img_msg_ptr->height = img_response.height;
   img_msg_ptr->width = img_response.width;
@@ -1785,28 +1807,33 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(
 sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(
     const ImageResponse& img_response,
     const ros::Time curr_ros_time,
-    const std::string frame_id) {
+    const std::string frame_id,
+    const bool& use_img_response_time) {
   // todo using img_response.image_data_float direclty as done
-  // get_img_msg_from_response() throws an error, hence the dependency on opencv
-  // and cv_bridge. however, this is an extremely fast op, so no big deal.
+  // get_img_msg_from_response() throws an error, hence the dependency on
+  // opencv and cv_bridge. however, this is an extremely fast op, so no big
+  // deal.
   cv::Mat depth_img = manual_decode_depth(img_response);
   sensor_msgs::ImagePtr depth_img_msg =
       cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_img).toImageMsg();
-  depth_img_msg->header.stamp = make_ts(img_response.time_stamp);
+  if (use_img_response_time) {
+    depth_img_msg->header.stamp = make_ts(img_response.time_stamp);
+  } else {
+    depth_img_msg->header.stamp = curr_ros_time;
+  }
   depth_img_msg->header.frame_id = frame_id;
   return depth_img_msg;
 }
 
-// todo have a special stereo pair mode and get projection matrix by calculating
-// offset wrt drone body frame?
+// todo have a special stereo pair mode and get projection matrix by
+// calculating offset wrt drone body frame?
 sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(
+    const std::string& vehicle_name,
     const std::string& camera_name,
     const CameraSetting& camera_setting,
     const CaptureSetting& capture_setting) const {
   sensor_msgs::CameraInfo cam_info_msg;
-  cam_info_msg.header.frame_id =
-      camera_name + "/" +
-      image_type_int_to_string_map_.at(capture_setting.image_type) + "_optical";
+  cam_info_msg.header.frame_id = camera_name + "_optical";
   cam_info_msg.height = capture_setting.height;
   cam_info_msg.width = capture_setting.width;
   float f_x = (capture_setting.width / 2.0) /
@@ -1825,13 +1852,22 @@ sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(
                     0.0,
                     1.0};
 
-  // TODO(srabiee): Handle this in a special stereo mode. Calculate the
-  // projection matrix for the right camera given the base line and f_x values
-  if (camera_name == "StereoRight") {
+  // TODO: If the stereo pair are not setup perfectly aligned, the
+  // rectification matrix and the projection matrix need to be loaded from a
+  // calibration file
+  cam_info_msg.R = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
+  // Calculate the projection matrix for the right camera given the base line
+  // and f_x values
+  std::cout << "vehicle_name: " << vehicle_name << std::endl;
+  auto it = vehicle_name_stereo_baseline_map_.find(vehicle_name);
+  if (camera_name == "StereoRight" &&
+      it != vehicle_name_stereo_baseline_map_.end()) {
+    float stereo_baseline = it->second;
     cam_info_msg.P = {f_x,
                       0.0,
                       capture_setting.width / 2.0,
-                      -288.0,
+                      -f_x * stereo_baseline,
                       0.0,
                       f_x,
                       capture_setting.height / 2.0,
@@ -1862,21 +1898,24 @@ void AirsimROSWrapper::process_and_publish_img_response(
     const std::vector<ImageResponse>& img_response_vec,
     const int img_response_idx,
     const std::string& vehicle_name) {
-  // todo add option to use airsim time (image_response.TTimePoint) like Gazebo
-  // /use_sim_time param
-  ros::Time curr_ros_time = ros::Time::now();
+  // todo add option to use airsim time (image_response.TTimePoint) like
+  // Gazebo /use_sim_time param
+  ros::Time curr_ros_time;
   int img_response_idx_internal = img_response_idx;
-
-  // TODO(srabiee): clean
-  std::cout << "Processing imgs: " << std::endl;
+  if (kForceSyncImages_) {
+    curr_ros_time = make_ts(img_response_vec.front().time_stamp);
+  } else {
+    curr_ros_time = ros::Time::now();
+  }
 
   for (const auto& curr_img_response : img_response_vec) {
     // if a render request failed for whatever reason, this img will be empty.
     // Attempting to use a make_ts(0) results in ros::Duration runtime error.
     if (curr_img_response.time_stamp == 0) continue;
 
-    std::cout << curr_img_response.camera_name << ": "
-              << curr_img_response.time_stamp << std::endl;
+    // TODO(srabiee): Current naming of frame ID's can lead to duplicates if
+    // multiple vehicles use the same sensor names. It is better to append
+    // sensor names with the name of the vehicle
 
     // todo publishing a tf for each capture type seems stupid. but it
     // foolproofs us against render thread's async stuff, I hope. Ideally,
@@ -1885,15 +1924,22 @@ void AirsimROSWrapper::process_and_publish_img_response(
     publish_camera_tf(curr_img_response,
                       curr_ros_time,
                       vehicle_name,
-                      curr_img_response.camera_name);
+                      curr_img_response.camera_name,
+                      !kForceSyncImages_);
 
     // todo simGetCameraInfo is wrong + also it's only for image type -1.
     // msr::airlib::CameraInfo camera_info =
     // airsim_client_.simGetCameraInfo(curr_img_response.camera_name);
 
     // update timestamp of saved cam info msgs
-    camera_info_msg_vec_[img_response_idx_internal].header.stamp =
-        curr_ros_time;
+    if (kForceSyncImages_) {
+      camera_info_msg_vec_[img_response_idx_internal].header.stamp =
+          curr_ros_time;
+    } else {
+      camera_info_msg_vec_[img_response_idx_internal].header.stamp =
+          make_ts(curr_img_response.time_stamp);
+    }
+
     cam_info_pub_vec_[img_response_idx_internal].publish(
         camera_info_msg_vec_[img_response_idx_internal]);
 
@@ -1903,15 +1949,16 @@ void AirsimROSWrapper::process_and_publish_img_response(
           get_depth_img_msg_from_response(
               curr_img_response,
               curr_ros_time,
-              curr_img_response.camera_name + "_optical"));
+              curr_img_response.camera_name + "_optical",
+              !kForceSyncImages_));
     }
     // Scene / Segmentation / SurfaceNormals / Infrared
     else {
       image_pub_vec_[img_response_idx_internal].publish(
-          get_img_msg_from_response(
-              curr_img_response,
-              curr_ros_time,
-              curr_img_response.camera_name + "_optical"));
+          get_img_msg_from_response(curr_img_response,
+                                    curr_ros_time,
+                                    curr_img_response.camera_name + "_optical",
+                                    !kForceSyncImages_));
     }
     img_response_idx_internal++;
   }
@@ -1924,9 +1971,14 @@ void AirsimROSWrapper::process_and_publish_img_response(
 void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
                                          const ros::Time& ros_time,
                                          const std::string& frame_id,
-                                         const std::string& child_frame_id) {
+                                         const std::string& child_frame_id,
+                                         const bool& use_img_response_time) {
   geometry_msgs::TransformStamped cam_tf_body_msg;
-  cam_tf_body_msg.header.stamp = ros_time;
+  if (use_img_response_time) {
+    cam_tf_body_msg.header.stamp = make_ts(img_response.time_stamp);
+  } else {
+    cam_tf_body_msg.header.stamp = ros_time;
+  }
   cam_tf_body_msg.header.frame_id = frame_id;
   cam_tf_body_msg.child_frame_id = child_frame_id + "_body";
   cam_tf_body_msg.transform.translation.x = img_response.camera_position.x();
@@ -1938,6 +1990,7 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
   cam_tf_body_msg.transform.rotation.w = img_response.camera_orientation.w();
 
   geometry_msgs::TransformStamped cam_tf_optical_msg;
+  //   cam_tf_optical_msg.header.stamp = make_ts(img_response.time_stamp);
   cam_tf_optical_msg.header.stamp = ros_time;
   cam_tf_optical_msg.header.frame_id = frame_id;
   cam_tf_optical_msg.child_frame_id = child_frame_id + "_optical";
@@ -1952,7 +2005,8 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
   tf2::Quaternion quat_cam_optical;
   tf2::convert(cam_tf_body_msg.transform.rotation, quat_cam_body);
   tf2::Matrix3x3 mat_cam_body(quat_cam_body);
-  // tf2::Matrix3x3 mat_cam_optical = matrix_cam_body_to_optical_ * mat_cam_body
+  // tf2::Matrix3x3 mat_cam_optical = matrix_cam_body_to_optical_ *
+  // mat_cam_body
   // * matrix_cam_body_to_optical_inverse_; tf2::Matrix3x3 mat_cam_optical =
   // matrix_cam_body_to_optical_ * mat_cam_body;
   tf2::Matrix3x3 mat_cam_optical;

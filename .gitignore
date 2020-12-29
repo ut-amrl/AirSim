@@ -377,3 +377,9 @@ ros/src/CMakeLists.txt
 # docs
 docs/README.md
 build_docs/
+
+# Unreal Environments
+Unreal/Environments/Blocks_*
+Unreal/Environments/Blocks 4.25
+Unreal/Environments/CPIP*
+Unreal/Plugins
