@@ -1126,10 +1126,11 @@ nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
 // read this carefully
 // https://docs.ros.org/kinetic/api/sensor_msgs/html/msg/PointCloud2.html
 sensor_msgs::PointCloud2 AirsimROSWrapper::get_lidar_msg_from_airsim(
-    const msr::airlib::LidarData& lidar_data) const {
+    const msr::airlib::LidarData& lidar_data) {
   sensor_msgs::PointCloud2 lidar_msg;
   lidar_msg.header.frame_id = world_frame_id_;  // todo
-
+  lidar_msg.header.stamp = make_ts(lidar_data.time_stamp);
+  
   if (lidar_data.point_cloud.size() > 3) {
     lidar_msg.height = 1;
     lidar_msg.width = lidar_data.point_cloud.size() / 3;
@@ -1729,8 +1730,10 @@ void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event) {
 
         // Transform to NWU
         if (use_nwu_std_) {
+          ros::Time msg_time = lidar_msg.header.stamp;
           tf2::doTransform(lidar_msg, lidar_msg, trans_nwu_ned_);
           lidar_msg.header.frame_id = vehicle_lidar_pair.second;
+          lidar_msg.header.stamp = msg_time;
         }
 
         lidar_pub_vec_[ctr].publish(lidar_msg);

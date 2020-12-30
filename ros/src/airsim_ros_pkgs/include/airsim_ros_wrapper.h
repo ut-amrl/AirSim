@@ -319,7 +319,7 @@ class AirsimROSWrapper {
   sensor_msgs::Imu get_imu_msg_from_airsim(
       const msr::airlib::ImuBase::Output& imu_data);
   sensor_msgs::PointCloud2 get_lidar_msg_from_airsim(
-      const msr::airlib::LidarData& lidar_data) const;
+      const msr::airlib::LidarData& lidar_data);
 
   // not used anymore, but can be useful in future with an unreal camera
   // calibration environment
