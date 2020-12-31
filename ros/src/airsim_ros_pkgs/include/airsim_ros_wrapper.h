@@ -328,6 +328,11 @@ class AirsimROSWrapper {
   void convert_yaml_to_simple_mat(const YAML::Node& node,
                                   SimpleMatrix& m) const;  // todo ugly
 
+  // simulation time utility
+  ros::Time airsim_timestamp_to_ros(const msr::airlib::TTimePoint& stamp) const;
+  ros::Time chrono_timestamp_to_ros(
+      const std::chrono::system_clock::time_point& stamp) const;
+
  private:
   double update_airsim_timestep_;
   bool use_api_control_;
@@ -439,9 +444,7 @@ class AirsimROSWrapper {
   ros::CallbackQueue lidar_timer_cb_queue_;
 
   // todo race condition
-  std::recursive_mutex drone_control_mutex_;
-  // std::recursive_mutex img_mutex_;
-  // std::recursive_mutex lidar_mutex_;
+  std::mutex drone_control_mutex_;
 
   // gimbal control
   bool has_gimbal_cmd_;

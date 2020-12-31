@@ -610,7 +610,7 @@ bool AirsimROSWrapper::takeoff_srv_cb(
     airsim_ros_pkgs::Takeoff::Request& request,
     airsim_ros_pkgs::Takeoff::Response& response,
     const std::string& vehicle_name) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     // todo value for timeout_sec?
@@ -626,7 +626,7 @@ bool AirsimROSWrapper::takeoff_srv_cb(
 bool AirsimROSWrapper::takeoff_group_srv_cb(
     airsim_ros_pkgs::TakeoffGroup::Request& request,
     airsim_ros_pkgs::TakeoffGroup::Response& response) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     for (const auto& vehicle_name : request.vehicle_names)
@@ -643,7 +643,7 @@ bool AirsimROSWrapper::takeoff_group_srv_cb(
 bool AirsimROSWrapper::takeoff_all_srv_cb(
     airsim_ros_pkgs::Takeoff::Request& request,
     airsim_ros_pkgs::Takeoff::Response& response) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     for (const auto& vehicle_name : vehicle_names_)
@@ -660,7 +660,7 @@ bool AirsimROSWrapper::takeoff_all_srv_cb(
 bool AirsimROSWrapper::land_srv_cb(airsim_ros_pkgs::Land::Request& request,
                                    airsim_ros_pkgs::Land::Response& response,
                                    const std::string& vehicle_name) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     airsim_client_.landAsync(60, vehicle_name)->waitOnLastTask();
@@ -672,7 +672,7 @@ bool AirsimROSWrapper::land_srv_cb(airsim_ros_pkgs::Land::Request& request,
 bool AirsimROSWrapper::land_group_srv_cb(
     airsim_ros_pkgs::LandGroup::Request& request,
     airsim_ros_pkgs::LandGroup::Response& response) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     for (const auto& vehicle_name : request.vehicle_names)
@@ -686,7 +686,7 @@ bool AirsimROSWrapper::land_group_srv_cb(
 bool AirsimROSWrapper::land_all_srv_cb(
     airsim_ros_pkgs::Land::Request& request,
     airsim_ros_pkgs::Land::Response& response) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   if (request.waitOnLastTask)
     for (const auto& vehicle_name : vehicle_names_)
@@ -702,7 +702,7 @@ bool AirsimROSWrapper::land_all_srv_cb(
 bool AirsimROSWrapper::reset_srv_cb(
     airsim_ros_pkgs::Reset::Request& request,
     airsim_ros_pkgs::Reset::Response& response) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
   switch (vehicle_type_) {
     case CAR:
       airsim_car_client_.reset();
@@ -740,7 +740,7 @@ msr::airlib::Quaternionr AirsimROSWrapper::get_airlib_quat(
 void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
     const geometry_msgs::Twist::ConstPtr& msg,
     const std::string& vehicle_name) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
   car_ros_vec_[vehicle_idx].vel_cmd.t = ros::Time::now();
@@ -762,7 +762,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
 void AirsimROSWrapper::vel_cmd_body_frame_cb(
     const airsim_ros_pkgs::VelCmd::ConstPtr& msg,
     const std::string& vehicle_name) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
 
@@ -793,7 +793,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_cb(
 // TODO(Sadegh): Update this to support cars
 void AirsimROSWrapper::vel_cmd_group_body_frame_cb(
     const airsim_ros_pkgs::VelCmdGroup& msg) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   for (const auto& vehicle_name : msg.vehicle_names) {
     int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
@@ -828,7 +828,7 @@ void AirsimROSWrapper::vel_cmd_group_body_frame_cb(
 // airsim_ros_pkgs::VelCmd::ConstPtr& msg)
 void AirsimROSWrapper::vel_cmd_all_body_frame_cb(
     const airsim_ros_pkgs::VelCmd& msg) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   // todo expose waitOnLastTask or nah?
   for (const auto& vehicle_name : vehicle_names_) {
@@ -863,7 +863,7 @@ void AirsimROSWrapper::vel_cmd_all_body_frame_cb(
 void AirsimROSWrapper::vel_cmd_world_frame_cb(
     const airsim_ros_pkgs::VelCmd::ConstPtr& msg,
     const std::string& vehicle_name) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
 
@@ -882,7 +882,7 @@ void AirsimROSWrapper::vel_cmd_world_frame_cb(
 // this is kinda unnecessary but maybe it makes life easier for the end user.
 void AirsimROSWrapper::vel_cmd_group_world_frame_cb(
     const airsim_ros_pkgs::VelCmdGroup& msg) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   for (const auto& vehicle_name : msg.vehicle_names) {
     int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
@@ -901,7 +901,7 @@ void AirsimROSWrapper::vel_cmd_group_world_frame_cb(
 
 void AirsimROSWrapper::vel_cmd_all_world_frame_cb(
     const airsim_ros_pkgs::VelCmd& msg) {
-  std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
 
   switch (vehicle_type_) {
     case CAR:
@@ -1129,8 +1129,8 @@ sensor_msgs::PointCloud2 AirsimROSWrapper::get_lidar_msg_from_airsim(
     const msr::airlib::LidarData& lidar_data) {
   sensor_msgs::PointCloud2 lidar_msg;
   lidar_msg.header.frame_id = world_frame_id_;  // todo
-  lidar_msg.header.stamp = make_ts(lidar_data.time_stamp);
-  
+  lidar_msg.header.stamp = airsim_timestamp_to_ros(lidar_data.time_stamp);
+
   if (lidar_data.point_cloud.size() > 3) {
     lidar_msg.height = 1;
     lidar_msg.width = lidar_data.point_cloud.size() / 3;
@@ -1186,7 +1186,7 @@ sensor_msgs::Imu AirsimROSWrapper::get_imu_msg_from_airsim(
   imu_msg.linear_acceleration.y = imu_data.linear_acceleration.y();
   imu_msg.linear_acceleration.z = imu_data.linear_acceleration.z();
 
-  imu_msg.header.stamp = make_ts(imu_data.time_stamp);
+  imu_msg.header.stamp = airsim_timestamp_to_ros(imu_data.time_stamp);
   // imu_msg.orientation_covariance = ;
   // imu_msg.angular_velocity_covariance = ;
   // imu_msg.linear_acceleration_covariance = ;
@@ -1246,19 +1246,32 @@ AirsimROSWrapper::get_gps_sensor_msg_from_airsim_geo_point(
 //     vel_cmd_.yaw_mode.yaw_or_rate = yaw;
 // }
 
+ros::Time AirsimROSWrapper::chrono_timestamp_to_ros(
+    const std::chrono::system_clock::time_point& stamp) const {
+  auto dur = std::chrono::duration<double>(stamp.time_since_epoch());
+  ros::Time cur_time;
+  cur_time.fromSec(dur.count());
+  return cur_time;
+}
+
+ros::Time AirsimROSWrapper::airsim_timestamp_to_ros(
+    const msr::airlib::TTimePoint& stamp) const {
+  // airsim appears to use chrono::system_clock with nanosecond precision
+  std::chrono::nanoseconds dur(stamp);
+  std::chrono::time_point<std::chrono::system_clock> tp(dur);
+  ros::Time cur_time = chrono_timestamp_to_ros(tp);
+  return cur_time;
+}
+
 void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
   try {
-    std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
-
     // todo this is global origin
     origin_geo_point_pub_.publish(origin_geo_point_msg_);
     // iterate over drones
     for (auto& multirotor_ros : multirotor_ros_vec_) {
       // get drone state from airsim
-      std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
       multirotor_ros.curr_drone_state =
           airsim_client_.getMultirotorState(multirotor_ros.vehicle_name);
-      lck.unlock();
       ros::Time curr_ros_time = ros::Time::now();
 
       // convert airsim drone state to ROS msgs
@@ -1281,7 +1294,7 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
 
       // send control commands from the last callback to airsim
       if (multirotor_ros.has_vel_cmd && use_api_control_) {
-        std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
+        std::lock_guard<std::mutex> guard(drone_control_mutex_);
         airsim_client_.moveByVelocityAsync(
             multirotor_ros.vel_cmd.x,
             multirotor_ros.vel_cmd.y,
@@ -1290,7 +1303,6 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
             msr::airlib::DrivetrainType::MaxDegreeOfFreedom,
             multirotor_ros.vel_cmd.yaw_mode,
             multirotor_ros.vehicle_name);
-        lck.unlock();
       }
 
       // "clear" control cmds
@@ -1301,10 +1313,8 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
     if (imu_pub_vec_.size() > 0) {
       int ctr = 0;
       for (const auto& vehicle_imu_pair : vehicle_imu_map_) {
-        std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
         auto imu_data = airsim_client_.getImuData(vehicle_imu_pair.second,
                                                   vehicle_imu_pair.first);
-        lck.unlock();
         sensor_msgs::Imu imu_msg = get_imu_msg_from_airsim(imu_data);
         imu_msg.header.frame_id = vehicle_imu_pair.first;
         // imu_msg.header.stamp = ros::Time::now();
@@ -1326,11 +1336,10 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
 
     // todo add and expose a gimbal angular velocity to airlib
     if (has_gimbal_cmd_) {
-      std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
+      std::lock_guard<std::mutex> guard(drone_control_mutex_);
       airsim_client_.simSetCameraOrientation(gimbal_cmd_.camera_name,
                                              gimbal_cmd_.target_quat,
                                              gimbal_cmd_.vehicle_name);
-      lck.unlock();
     }
 
     has_gimbal_cmd_ = false;
@@ -1348,17 +1357,13 @@ const double VEL_CMD_DURATION = 15.0;
 
 void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
   try {
-    std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
-
     // todo this is global origin
     origin_geo_point_pub_.publish(origin_geo_point_msg_);
     // iterate over drones
     for (auto& car_ros : car_ros_vec_) {
       // get drone state from airsim
-      std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
       car_ros.curr_car_state =
           airsim_car_client_.getCarState(car_ros.vehicle_name);
-      lck.unlock();
       ros::Time curr_ros_time = ros::Time::now();
 
       // convert airsim drone state to ROS msgs
@@ -1396,6 +1401,7 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
             car_ros.curr_car_state.kinematics_estimated.twist,
             car_ros.curr_car_state.speed,
             ros::Time::now());
+        std::lock_guard<std::mutex> guard(drone_control_mutex_);
         airsim_car_client_.setCarControls(controls);
         airsim_car_client_.setCarControls(controls);
         airsim_car_client_.setCarControls(controls);
@@ -1406,10 +1412,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
     if (imu_pub_vec_.size() > 0) {
       int ctr = 0;
       for (const auto& vehicle_imu_pair : vehicle_imu_map_) {
-        std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
         auto imu_data = airsim_car_client_.getImuData(vehicle_imu_pair.second,
                                                       vehicle_imu_pair.first);
-        lck.unlock();
         sensor_msgs::Imu imu_msg = get_imu_msg_from_airsim(imu_data);
         imu_msg.header.frame_id = vehicle_imu_pair.first;
         // imu_msg.header.stamp = ros::Time::now();
@@ -1644,14 +1648,12 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent& event) {
     int image_response_idx = 0;
     for (const auto& airsim_img_request_vehicle_name_pair :
          airsim_img_request_vehicle_name_pair_vec_) {
-      std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
       switch (vehicle_type_) {
         case CAR: {
           const std::vector<ImageResponse>& img_response =
               airsim_car_client_images_.simGetImages(
                   airsim_img_request_vehicle_name_pair.first,
                   airsim_img_request_vehicle_name_pair.second);
-          lck.unlock();
           if (img_response.size() ==
               airsim_img_request_vehicle_name_pair.first.size()) {
             process_and_publish_img_response(
@@ -1667,7 +1669,6 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent& event) {
               airsim_client_images_.simGetImages(
                   airsim_img_request_vehicle_name_pair.first,
                   airsim_img_request_vehicle_name_pair.second);
-          lck.unlock();
           if (img_response.size() ==
               airsim_img_request_vehicle_name_pair.first.size()) {
             process_and_publish_img_response(
@@ -1694,12 +1695,9 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent& event) {
 
 void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event) {
   try {
-    // std::lock_guard<std::recursive_mutex> guard(drone_control_mutex_);
     if (lidar_pub_vec_.size() > 0) {
-      // std::lock_guard<std::recursive_mutex> guard(lidar_mutex_);
       int ctr = 0;
       for (const auto& vehicle_lidar_pair : vehicle_lidar_map_) {
-        std::unique_lock<std::recursive_mutex> lck(drone_control_mutex_);
         sensor_msgs::PointCloud2 lidar_msg;
         switch (vehicle_type_) {
           case CAR: {
@@ -1707,7 +1705,6 @@ void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event) {
                 vehicle_lidar_pair.second, vehicle_lidar_pair.first);
             // airsim api is imu_name, vehicle_name
 
-            lck.unlock();
             // todo make const ptr msg to avoid copy
             lidar_msg = get_lidar_msg_from_airsim(lidar_data);
             break;
@@ -1715,7 +1712,6 @@ void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event) {
           case MULTIROTOR: {
             auto lidar_data = airsim_client_lidar_.getLidarData(
                 vehicle_lidar_pair.second, vehicle_lidar_pair.first);
-            lck.unlock();
             // todo make const ptr msg to avoid copy
             lidar_msg = get_lidar_msg_from_airsim(lidar_data);
             break;
@@ -1776,7 +1772,8 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(
   img_msg_ptr->step = img_response.width * channel_num;
 
   if (use_img_response_time) {
-    img_msg_ptr->header.stamp = make_ts(img_response.time_stamp);
+    img_msg_ptr->header.stamp =
+        airsim_timestamp_to_ros(img_response.time_stamp);
   } else {
     img_msg_ptr->header.stamp = curr_ros_time;
   }
@@ -1820,7 +1817,8 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(
   sensor_msgs::ImagePtr depth_img_msg =
       cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_img).toImageMsg();
   if (use_img_response_time) {
-    depth_img_msg->header.stamp = make_ts(img_response.time_stamp);
+    depth_img_msg->header.stamp =
+        airsim_timestamp_to_ros(img_response.time_stamp);
   } else {
     depth_img_msg->header.stamp = curr_ros_time;
   }
@@ -1906,14 +1904,16 @@ void AirsimROSWrapper::process_and_publish_img_response(
   ros::Time curr_ros_time;
   int img_response_idx_internal = img_response_idx;
   if (kForceSyncImages_) {
-    curr_ros_time = make_ts(img_response_vec.front().time_stamp);
+    curr_ros_time =
+        airsim_timestamp_to_ros(img_response_vec.front().time_stamp);
   } else {
     curr_ros_time = ros::Time::now();
   }
 
   for (const auto& curr_img_response : img_response_vec) {
     // if a render request failed for whatever reason, this img will be empty.
-    // Attempting to use a make_ts(0) results in ros::Duration runtime error.
+    // Attempting to use a make_ts(0) results in ros::Duration
+    // runtime error.
     if (curr_img_response.time_stamp == 0) continue;
 
     // TODO(srabiee): Current naming of frame ID's can lead to duplicates if
@@ -1940,7 +1940,7 @@ void AirsimROSWrapper::process_and_publish_img_response(
           curr_ros_time;
     } else {
       camera_info_msg_vec_[img_response_idx_internal].header.stamp =
-          make_ts(curr_img_response.time_stamp);
+          airsim_timestamp_to_ros(curr_img_response.time_stamp);
     }
 
     cam_info_pub_vec_[img_response_idx_internal].publish(
@@ -1978,7 +1978,8 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
                                          const bool& use_img_response_time) {
   geometry_msgs::TransformStamped cam_tf_body_msg;
   if (use_img_response_time) {
-    cam_tf_body_msg.header.stamp = make_ts(img_response.time_stamp);
+    cam_tf_body_msg.header.stamp =
+        airsim_timestamp_to_ros(img_response.time_stamp);
   } else {
     cam_tf_body_msg.header.stamp = ros_time;
   }
@@ -1993,7 +1994,12 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
   cam_tf_body_msg.transform.rotation.w = img_response.camera_orientation.w();
 
   geometry_msgs::TransformStamped cam_tf_optical_msg;
-  //   cam_tf_optical_msg.header.stamp = make_ts(img_response.time_stamp);
+  if (use_img_response_time) {
+    cam_tf_optical_msg.header.stamp =
+        airsim_timestamp_to_ros(img_response.time_stamp);
+  } else {
+    cam_tf_optical_msg.header.stamp = ros_time;
+  }
   cam_tf_optical_msg.header.stamp = ros_time;
   cam_tf_optical_msg.header.frame_id = frame_id;
   cam_tf_optical_msg.child_frame_id = child_frame_id + "_optical";
