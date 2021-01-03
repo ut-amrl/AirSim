@@ -6,6 +6,7 @@ STRICT_MODE_OFF  // todo what does this do?
 #include "rpc/rpc_error.h"
     STRICT_MODE_ON
 
+#include <airsim_ros_pkgs/CollisionInfo.h>
 #include <airsim_ros_pkgs/GPSYaw.h>
 #include <airsim_ros_pkgs/GimbalAngleEulerCmd.h>
 #include <airsim_ros_pkgs/GimbalAngleQuatCmd.h>
@@ -59,6 +60,7 @@ STRICT_MODE_OFF  // todo what does this do?
 #include "vehicles/car/api/CarRpcLibClient.hpp"
 #include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
 #include "yaml-cpp/yaml.h"
+
     // #include "nodelet/nodelet.h"
 
     // todo move airlib typedefs to separate header file?
@@ -312,6 +314,9 @@ class AirsimROSWrapper {
       const msr::airlib::MultirotorState& drone_state) const;
   nav_msgs::Odometry get_odom_msg_from_airsim_state(
       const msr::airlib::CarApiBase::CarState& car_state) const;
+  airsim_ros_pkgs::CollisionInfo get_collision_msg_from_airsim_info(
+      const msr::airlib::CollisionInfo& collision_info,
+      const std::string& frame_id) const;
   airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(
       const msr::airlib::GeoPoint& geo_point) const;
   sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(
@@ -387,6 +392,7 @@ class AirsimROSWrapper {
     /// All things ROS
     ros::Publisher odom_local_ned_pub;
     ros::Publisher global_gps_pub;
+    ros::Publisher collision_info_pub;
     // ros::Publisher home_geo_point_pub_; // geo coord of unreal origin
 
     // Subscriber to the standard velocity command
@@ -398,6 +404,7 @@ class AirsimROSWrapper {
     msr::airlib::CarApiBase::CarState curr_car_state;
     nav_msgs::Odometry curr_odom;
     sensor_msgs::NavSatFix gps_sensor_msg;
+    airsim_ros_pkgs::CollisionInfo curr_collision_msg;
     bool has_vel_cmd;
     VelCmd vel_cmd;
     PIDVelocityController velocity_controller;

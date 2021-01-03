@@ -185,6 +185,9 @@ void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
   car_ros.vehicle_name = vehicle_name;
   car_ros.odom_local_ned_pub =
       nh_private_.advertise<nav_msgs::Odometry>(vehicle_name + "/odom", 10);
+  car_ros.collision_info_pub =
+      nh_private_.advertise<airsim_ros_pkgs::CollisionInfo>(
+          vehicle_name + "/collision_info", 10);
   car_ros.global_gps_pub = nh_private_.advertise<sensor_msgs::NavSatFix>(
       vehicle_name + "/global_gps", 10);
 
@@ -1120,6 +1123,20 @@ nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
   return odom_msg;
 }
 
+airsim_ros_pkgs::CollisionInfo
+AirsimROSWrapper::get_collision_msg_from_airsim_info(
+    const msr::airlib::CollisionInfo& collision_info,
+    const std::string& frame_id) const {
+  airsim_ros_pkgs::CollisionInfo collision_msg;
+  collision_msg.header.stamp =
+      airsim_timestamp_to_ros(collision_info.time_stamp);
+  collision_msg.header.frame_id = frame_id;
+  collision_msg.has_collided = collision_info.has_collided;
+  collision_msg.object_name = collision_info.object_name;
+
+  return collision_msg;
+}
+
 // https://docs.ros.org/jade/api/sensor_msgs/html/
 // point__cloud__conversion_8h_source.html#l00066
 // look at UnrealLidarSensor.cpp UnrealLidarSensor::getPointCloud() for math
@@ -1364,6 +1381,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
       // get drone state from airsim
       car_ros.curr_car_state =
           airsim_car_client_.getCarState(car_ros.vehicle_name);
+      msr::airlib::CollisionInfo collision_info =
+          airsim_car_client_.simGetCollisionInfo(car_ros.vehicle_name);
       ros::Time curr_ros_time = ros::Time::now();
 
       // convert airsim drone state to ROS msgs
@@ -1384,6 +1403,16 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
 
       car_ros.odom_local_ned_pub.publish(car_ros.curr_odom);
       publish_odom_tf(car_ros.curr_odom);
+
+      // convert collision info to ROS msgs
+      if (collision_info.has_collided &&
+          (car_ros.curr_collision_msg.header.stamp <
+               airsim_timestamp_to_ros(collision_info.time_stamp) ||
+           !car_ros.curr_collision_msg.has_collided)) {
+        car_ros.curr_collision_msg = get_collision_msg_from_airsim_info(
+            collision_info, car_ros.odom_frame_id);
+        car_ros.collision_info_pub.publish(car_ros.curr_collision_msg);
+      }
 
       //         car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
 

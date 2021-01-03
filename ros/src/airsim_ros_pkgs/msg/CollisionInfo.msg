@@ -1,0 +1,3 @@
+std_msgs/Header header
+bool has_collided
+string object_name
