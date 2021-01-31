@@ -54,6 +54,7 @@ add_service_files(
   Land.srv
   LandGroup.srv
   Reset.srv
+  ResetToLocation.srv
   SetLocalPosition.srv
 )
 

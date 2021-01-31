@@ -550,6 +550,9 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
   reset_srvr_ = nh_private_.advertiseService(
       "reset", &AirsimROSWrapper::reset_srv_cb, this);
 
+  reset_to_loc_srvr_ = nh_private_.advertiseService(
+      "reset_to_loc", &AirsimROSWrapper::reset_to_loc_srv_cb, this);
+
   // todo mimic gazebo's /use_sim_time feature which publishes airsim's clock
   // time..via an rpc call?!
   // clock_pub_ = nh_private_.advertise<rosgraph_msgs::Clock>("clock", 10);
@@ -720,6 +723,60 @@ bool AirsimROSWrapper::reset_srv_cb(
   return true;  // todo
 }
 
+bool AirsimROSWrapper::reset_to_loc_srv_cb(
+    airsim_ros_pkgs::ResetToLocation::Request& request,
+    airsim_ros_pkgs::ResetToLocation::Response& response) {
+  // TODO: Make sure all attributes of car_ros are reset (e.g. collision)
+  std::lock_guard<std::mutex> guard(drone_control_mutex_);
+
+  if (vehicle_name_idx_map_.find(request.vehicle_name) ==
+      vehicle_name_idx_map_.end()) {
+    LOG(WARNING) << "Vehicle " << request.vehicle_name << " was not found!";
+    response.success = false;
+    return false;
+  }
+
+  if (vehicle_type_ != CAR) {
+    LOG(WARNING) << "Resetting to location service is currently only supported"
+                 << " for cars.";
+    response.success = false;
+    return false;
+  }
+
+  // If the NWU coordinate frame is being used (the ROS standard), it is
+  // assumed that the requested pose is also in NWU. It should be converted
+  // to NED before being passed to the AirSim API.
+  geometry_msgs::Pose target_pose;
+  if (use_nwu_std_) {
+    tf2::Transform tf_ned_nwu, tf_nwu_ned;
+    tf2::Transform tf_OdomNED_BaseNED, tf_OdomNWU_BaseNWU;
+    tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
+    tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
+    tf2::convert(request.pose, tf_OdomNWU_BaseNWU);
+
+    tf_OdomNED_BaseNED = tf_ned_nwu * tf_OdomNWU_BaseNWU * tf_nwu_ned;
+
+    target_pose.position.x = tf_OdomNED_BaseNED.getOrigin().getX();
+    target_pose.position.y = tf_OdomNED_BaseNED.getOrigin().getY();
+    target_pose.position.z = tf_OdomNED_BaseNED.getOrigin().getZ();
+    target_pose.orientation = tf2::toMsg(tf_OdomNED_BaseNED.getRotation());
+  } else {
+    target_pose = request.pose;
+  }
+
+  Eigen::Vector3f position(
+      target_pose.position.x, target_pose.position.y, target_pose.position.z);
+  Eigen::Quaternionf orientation(target_pose.orientation.w,
+                                 target_pose.orientation.x,
+                                 target_pose.orientation.y,
+                                 target_pose.orientation.z);
+  Pose pose(position, orientation);
+  airsim_car_client_.simSetVehiclePose(pose, true, request.vehicle_name);
+
+  response.success = true;
+  return true;
+}
+
 tf2::Quaternion AirsimROSWrapper::get_tf2_quat(
     const msr::airlib::Quaternionr& airlib_quat) const {
   return tf2::Quaternion(
@@ -760,8 +817,9 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
 }
 
 // TODO(Sadegh): Update this to support cars
-// void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd&
-// msg, const std::string& vehicle_name)
+// void AirsimROSWrapper::vel_cmd_body_frame_cb(const
+// airsim_ros_pkgs::VelCmd& msg, const std::string&
+// vehicle_name)
 void AirsimROSWrapper::vel_cmd_body_frame_cb(
     const airsim_ros_pkgs::VelCmd::ConstPtr& msg,
     const std::string& vehicle_name) {
@@ -882,7 +940,8 @@ void AirsimROSWrapper::vel_cmd_world_frame_cb(
 }
 
 // TODO(Sadegh): Update this to support cars
-// this is kinda unnecessary but maybe it makes life easier for the end user.
+// this is kinda unnecessary but maybe it makes life easier for
+// the end user.
 void AirsimROSWrapper::vel_cmd_group_world_frame_cb(
     const airsim_ros_pkgs::VelCmdGroup& msg) {
   std::lock_guard<std::mutex> guard(drone_control_mutex_);
@@ -945,7 +1004,8 @@ void AirsimROSWrapper::vel_cmd_all_world_frame_cb(
   }
 }
 
-// TODO(Sadegh): Add a ROS subscriber for standard velocity commands
+// TODO(Sadegh): Add a ROS subscriber for standard velocity
+// commands
 
 // todo support multiple gimbal commands
 void AirsimROSWrapper::gimbal_angle_quat_cmd_cb(
@@ -966,10 +1026,10 @@ void AirsimROSWrapper::gimbal_angle_quat_cmd_cb(
 
 // todo support multiple gimbal commands
 // 1. find quaternion of default gimbal pose
-// 2. forward multiply with quaternion equivalent to desired euler commands
-// (in degrees)
-// 3. call airsim client's setcameraorientation which sets camera orientation
-// wrt world (or takeoff?) ned frame. todo
+// 2. forward multiply with quaternion equivalent to desired
+// euler commands (in degrees)
+// 3. call airsim client's setcameraorientation which sets
+// camera orientation wrt world (or takeoff?) ned frame. todo
 void AirsimROSWrapper::gimbal_angle_euler_cmd_cb(
     const airsim_ros_pkgs::GimbalAngleEulerCmd& gimbal_angle_euler_cmd_msg) {
   try {
@@ -993,8 +1053,8 @@ nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
     const msr::airlib::MultirotorState& drone_state) const {
   nav_msgs::Odometry odom_msg;
   // odom_msg.header.frame_id = world_frame_id_;
-  // odom_msg.child_frame_id = "/airsim/odom_local_ned"; // todo make
-  // param
+  // odom_msg.child_frame_id = "/airsim/odom_local_ned"; // todo
+  // make param
 
   odom_msg.pose.pose.position.x = drone_state.getPosition().x();
   odom_msg.pose.pose.position.y = drone_state.getPosition().y();
@@ -1032,11 +1092,11 @@ nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
     odom_msg.pose.pose.orientation =
         tf2::toMsg(tf_OdomNWU_BaseNWU.getRotation());
 
-    // Convert the twist messages. The twist messages first need to be
-    // converted from NED to NWU. Then they are transformed from the
-    // odom frame to the base_link frame (child_frame of the odometry msg)
-    // as this is the standard given ROS documentation for the odometry
-    // message.
+    // Convert the twist messages. The twist messages first need
+    // to be converted from NED to NWU. Then they are
+    // transformed from the odom frame to the base_link frame
+    // (child_frame of the odometry msg) as this is the standard
+    // given ROS documentation for the odometry message.
     geometry_msgs::TransformStamped odom_inv_tf_msg;
     tf2::convert(tf_OdomNWU_BaseNWU.inverse(), odom_inv_tf_msg.transform);
 
@@ -1097,11 +1157,11 @@ nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(
     odom_msg.pose.pose.orientation =
         tf2::toMsg(tf_OdomNWU_BaseNWU.getRotation());
 
-    // Convert the twist messages. The twist messages first need to be
-    // converted from NED to NWU. Then they are transformed from the
-    // odom frame to the base_link frame (child_frame of the odometry msg)
-    // as this is the standard given ROS documentation for the odometry
-    // message.
+    // Convert the twist messages. The twist messages first need
+    // to be converted from NED to NWU. Then they are
+    // transformed from the odom frame to the base_link frame
+    // (child_frame of the odometry msg) as this is the standard
+    // given ROS documentation for the odometry message.
     geometry_msgs::TransformStamped odom_inv_tf_msg;
     tf2::convert(tf_OdomNWU_BaseNWU.inverse(), odom_inv_tf_msg.transform);
 
@@ -1139,8 +1199,9 @@ AirsimROSWrapper::get_collision_msg_from_airsim_info(
 
 // https://docs.ros.org/jade/api/sensor_msgs/html/
 // point__cloud__conversion_8h_source.html#l00066
-// look at UnrealLidarSensor.cpp UnrealLidarSensor::getPointCloud() for math
-// read this carefully
+// look at UnrealLidarSensor.cpp
+// UnrealLidarSensor::getPointCloud() for math read this
+// carefully
 // https://docs.ros.org/kinetic/api/sensor_msgs/html/msg/PointCloud2.html
 sensor_msgs::PointCloud2 AirsimROSWrapper::get_lidar_msg_from_airsim(
     const msr::airlib::LidarData& lidar_data) {
@@ -1186,8 +1247,8 @@ sensor_msgs::PointCloud2 AirsimROSWrapper::get_lidar_msg_from_airsim(
 sensor_msgs::Imu AirsimROSWrapper::get_imu_msg_from_airsim(
     const msr::airlib::ImuBase::Output& imu_data) {
   sensor_msgs::Imu imu_msg;
-  // imu_msg.header.frame_id = "/airsim/odom_local_ned";// todo multiple
-  // drones
+  // imu_msg.header.frame_id = "/airsim/odom_local_ned";// todo
+  // multiple drones
   imu_msg.orientation.x = imu_data.orientation.x();
   imu_msg.orientation.y = imu_data.orientation.y();
   imu_msg.orientation.z = imu_data.orientation.z();
@@ -1252,7 +1313,8 @@ AirsimROSWrapper::get_gps_sensor_msg_from_airsim_geo_point(
 //     vel_cmd_.y = 0.0;
 //     vel_cmd_.z = 0.0;
 
-//     vel_cmd_.drivetrain = msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
+//     vel_cmd_.drivetrain =
+//     msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
 //     vel_cmd_.yaw_mode.is_rate = false;
 
 //     // todo make class member or a fucntion
@@ -1273,7 +1335,8 @@ ros::Time AirsimROSWrapper::chrono_timestamp_to_ros(
 
 ros::Time AirsimROSWrapper::airsim_timestamp_to_ros(
     const msr::airlib::TTimePoint& stamp) const {
-  // airsim appears to use chrono::system_clock with nanosecond precision
+  // airsim appears to use chrono::system_clock with nanosecond
+  // precision
   std::chrono::nanoseconds dur(stamp);
   std::chrono::time_point<std::chrono::system_clock> tp(dur);
   ros::Time cur_time = chrono_timestamp_to_ros(tp);
@@ -1346,8 +1409,8 @@ void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent& event) {
         static_tf_pub_.sendTransform(static_tf_msg);
       }
 
-      // we've sent these static transforms, so no need to keep sending
-      // them
+      // we've sent these static transforms, so no need to keep
+      // sending them
       static_tf_msg_vec_.clear();
     }
 
@@ -1392,12 +1455,13 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
       car_ros.curr_odom.child_frame_id = car_ros.odom_frame_id;
       car_ros.curr_odom.header.stamp = curr_ros_time;
 
-      // TODO(Sadegh): Get GPS readings for the car. There is no GPS data
-      // in the car state
+      // TODO(Sadegh): Get GPS readings for the car. There is no
+      // GPS data in the car state
       //         car_ros.gps_sensor_msg =
       //             get_gps_sensor_msg_from_airsim_geo_point(
       //                                     airsim_car_client_.getGpsData());
-      //         car_ros.gps_sensor_msg.header.stamp = curr_ros_time;
+      //         car_ros.gps_sensor_msg.header.stamp =
+      //         curr_ros_time;
 
       // publish to ROS!
 
@@ -1425,7 +1489,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
           car_ros.velocity_controller.set_zero_target();
         }
 
-        // send control commands from the last callback to airsim
+        // send control commands from the last callback to
+        // airsim
         CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(
             car_ros.curr_car_state.kinematics_estimated.twist,
             car_ros.curr_car_state.speed,
@@ -1457,8 +1522,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
         static_tf_pub_.sendTransform(static_tf_msg);
       }
 
-      // we've sent these static transforms, so no need to keep sending
-      // them
+      // we've sent these static transforms, so no need to keep
+      // sending them
       static_tf_msg_vec_.clear();
     }
   }
@@ -1471,8 +1536,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
   }
 }
 
-// airsim uses nans for zeros in settings.json. we set them to zeros here for
-// handling tfs in ROS
+// airsim uses nans for zeros in settings.json. we set them to
+// zeros here for handling tfs in ROS
 void AirsimROSWrapper::set_nans_to_zeros_in_pose(
     VehicleSetting& vehicle_setting) const {
   if (std::isnan(vehicle_setting.position.x()))
@@ -1494,8 +1559,8 @@ void AirsimROSWrapper::set_nans_to_zeros_in_pose(
     vehicle_setting.rotation.roll = 0.0;
 }
 
-// if any nan's in camera pose, set them to match vehicle pose (which has
-// already converted any potential nans to zeros)
+// if any nan's in camera pose, set them to match vehicle pose
+// (which has already converted any potential nans to zeros)
 void AirsimROSWrapper::set_nans_to_zeros_in_pose(
     const VehicleSetting& vehicle_setting,
     CameraSetting& camera_setting) const {
@@ -1652,16 +1717,18 @@ void AirsimROSWrapper::append_static_camera_tf(
     tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
     tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
 
-    // Handle static_cam_tf_body_msg (transform from the camera body frame
-    // which is in NED that is rotate 180deg around x to the vehicle's origin
-    // frame (similar to ROS /odom frame))
+    // Handle static_cam_tf_body_msg (transform from the camera
+    // body frame which is in NED that is rotate 180deg around x
+    // to the vehicle's origin frame (similar to ROS /odom
+    // frame))
     tf2::Transform tf_OdomNED_CamNED, tf_OdomNWU_CamNWU;
     tf2::convert(static_cam_tf_body_msg.transform, tf_OdomNED_CamNED);
     tf_OdomNWU_CamNWU = tf_nwu_ned * tf_OdomNED_CamNED * tf_ned_nwu;
     tf2::convert(tf_OdomNWU_CamNWU, static_cam_tf_body_msg.transform);
 
-    // Handle static_cam_tf_optical_msg (transform from the camera optical
-    // frame to the vehicle's origin frame (similar to ROS /odom frame))
+    // Handle static_cam_tf_optical_msg (transform from the
+    // camera optical frame to the vehicle's origin frame
+    // (similar to ROS /odom frame))
     tf2::Transform tf_OdomNED_CamOPT, tf_OdomNWU_CamOPT;
     tf2::convert(static_cam_tf_optical_msg.transform, tf_OdomNED_CamOPT);
     tf_OdomNWU_CamOPT = tf_nwu_ned * tf_OdomNED_CamOPT;
@@ -1716,7 +1783,8 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent& event) {
 
   catch (rpc::rpc_error& e) {
     std::string msg = e.get_error().as<std::string>();
-    std::cout << "Exception raised by the API, didn't get image response."
+    std::cout << "Exception raised by the API, didn't get "
+                 "image response."
               << std::endl
               << msg << std::endl;
   }
@@ -1770,7 +1838,8 @@ void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event) {
 
   catch (rpc::rpc_error& e) {
     std::string msg = e.get_error().as<std::string>();
-    std::cout << "Exception raised by the API, didn't get image response."
+    std::cout << "Exception raised by the API, didn't get "
+                 "image response."
               << std::endl
               << msg << std::endl;
   }
@@ -1839,9 +1908,9 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(
     const std::string frame_id,
     const bool& use_img_response_time) {
   // todo using img_response.image_data_float direclty as done
-  // get_img_msg_from_response() throws an error, hence the dependency on
-  // opencv and cv_bridge. however, this is an extremely fast op, so no big
-  // deal.
+  // get_img_msg_from_response() throws an error, hence the
+  // dependency on opencv and cv_bridge. however, this is an
+  // extremely fast op, so no big deal.
   cv::Mat depth_img = manual_decode_depth(img_response);
   sensor_msgs::ImagePtr depth_img_msg =
       cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_img).toImageMsg();
@@ -1855,8 +1924,8 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(
   return depth_img_msg;
 }
 
-// todo have a special stereo pair mode and get projection matrix by
-// calculating offset wrt drone body frame?
+// todo have a special stereo pair mode and get projection
+// matrix by calculating offset wrt drone body frame?
 sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(
     const std::string& vehicle_name,
     const std::string& camera_name,
@@ -1868,9 +1937,10 @@ sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(
   cam_info_msg.width = capture_setting.width;
   float f_x = (capture_setting.width / 2.0) /
               tan(math_common::deg2rad(capture_setting.fov_degrees / 2.0));
-  // todo focal length in Y direction should be same as X it seems. this can
-  // change in future a scene capture component which exactly correponds to a
-  // cine camera float f_y = (capture_setting.height / 2.0) /
+  // todo focal length in Y direction should be same as X it
+  // seems. this can change in future a scene capture component
+  // which exactly correponds to a cine camera float f_y =
+  // (capture_setting.height / 2.0) /
   // tan(math_common::deg2rad(fov_degrees / 2.0));
   cam_info_msg.K = {f_x,
                     0.0,
@@ -1882,13 +1952,13 @@ sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(
                     0.0,
                     1.0};
 
-  // TODO: If the stereo pair are not setup perfectly aligned, the
-  // rectification matrix and the projection matrix need to be loaded from a
-  // calibration file
+  // TODO: If the stereo pair are not setup perfectly aligned,
+  // the rectification matrix and the projection matrix need to
+  // be loaded from a calibration file
   cam_info_msg.R = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
 
-  // Calculate the projection matrix for the right camera given the base line
-  // and f_x values
+  // Calculate the projection matrix for the right camera given
+  // the base line and f_x values
   std::cout << "vehicle_name: " << vehicle_name << std::endl;
   auto it = vehicle_name_stereo_baseline_map_.find(vehicle_name);
   if (camera_name == "StereoRight" &&
@@ -1928,8 +1998,8 @@ void AirsimROSWrapper::process_and_publish_img_response(
     const std::vector<ImageResponse>& img_response_vec,
     const int img_response_idx,
     const std::string& vehicle_name) {
-  // todo add option to use airsim time (image_response.TTimePoint) like
-  // Gazebo /use_sim_time param
+  // todo add option to use airsim time
+  // (image_response.TTimePoint) like Gazebo /use_sim_time param
   ros::Time curr_ros_time;
   int img_response_idx_internal = img_response_idx;
   if (kForceSyncImages_) {
@@ -1940,27 +2010,28 @@ void AirsimROSWrapper::process_and_publish_img_response(
   }
 
   for (const auto& curr_img_response : img_response_vec) {
-    // if a render request failed for whatever reason, this img will be empty.
-    // Attempting to use a make_ts(0) results in ros::Duration
-    // runtime error.
+    // if a render request failed for whatever reason, this img
+    // will be empty. Attempting to use a make_ts(0) results in
+    // ros::Duration runtime error.
     if (curr_img_response.time_stamp == 0) continue;
 
-    // TODO(srabiee): Current naming of frame ID's can lead to duplicates if
-    // multiple vehicles use the same sensor names. It is better to append
-    // sensor names with the name of the vehicle
+    // TODO(srabiee): Current naming of frame ID's can lead to
+    // duplicates if multiple vehicles use the same sensor
+    // names. It is better to append sensor names with the name
+    // of the vehicle
 
-    // todo publishing a tf for each capture type seems stupid. but it
-    // foolproofs us against render thread's async stuff, I hope. Ideally,
-    // we should loop over cameras and then captures, and publish only one
-    // tf.
+    // todo publishing a tf for each capture type seems stupid.
+    // but it foolproofs us against render thread's async stuff,
+    // I hope. Ideally, we should loop over cameras and then
+    // captures, and publish only one tf.
     publish_camera_tf(curr_img_response,
                       curr_ros_time,
                       vehicle_name,
                       curr_img_response.camera_name,
                       !kForceSyncImages_);
 
-    // todo simGetCameraInfo is wrong + also it's only for image type -1.
-    // msr::airlib::CameraInfo camera_info =
+    // todo simGetCameraInfo is wrong + also it's only for image
+    // type -1. msr::airlib::CameraInfo camera_info =
     // airsim_client_.simGetCameraInfo(curr_img_response.camera_name);
 
     // update timestamp of saved cam info msgs
@@ -1975,7 +2046,8 @@ void AirsimROSWrapper::process_and_publish_img_response(
     cam_info_pub_vec_[img_response_idx_internal].publish(
         camera_info_msg_vec_[img_response_idx_internal]);
 
-    // DepthPlanner / DepthPerspective / DepthVis / DisparityNormalized
+    // DepthPlanner / DepthPerspective / DepthVis /
+    // DisparityNormalized
     if (curr_img_response.pixels_as_float) {
       image_pub_vec_[img_response_idx_internal].publish(
           get_depth_img_msg_from_response(
@@ -1997,9 +2069,9 @@ void AirsimROSWrapper::process_and_publish_img_response(
 }
 
 // publish camera transforms
-// camera poses are obtained from airsim's client API which are in (local) NED
-// frame. We first do a change of basis to camera optical frame (Z forward, X
-// right, Y down)
+// camera poses are obtained from airsim's client API which are
+// in (local) NED frame. We first do a change of basis to camera
+// optical frame (Z forward, X right, Y down)
 void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
                                          const ros::Time& ros_time,
                                          const std::string& frame_id,
@@ -2043,10 +2115,11 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
   tf2::Quaternion quat_cam_optical;
   tf2::convert(cam_tf_body_msg.transform.rotation, quat_cam_body);
   tf2::Matrix3x3 mat_cam_body(quat_cam_body);
-  // tf2::Matrix3x3 mat_cam_optical = matrix_cam_body_to_optical_ *
-  // mat_cam_body
-  // * matrix_cam_body_to_optical_inverse_; tf2::Matrix3x3 mat_cam_optical =
-  // matrix_cam_body_to_optical_ * mat_cam_body;
+  // tf2::Matrix3x3 mat_cam_optical =
+  // matrix_cam_body_to_optical_ * mat_cam_body
+  // * matrix_cam_body_to_optical_inverse_; tf2::Matrix3x3
+  // mat_cam_optical = matrix_cam_body_to_optical_ *
+  // mat_cam_body;
   tf2::Matrix3x3 mat_cam_optical;
   mat_cam_optical.setValue(mat_cam_body.getColumn(1).getX(),
                            mat_cam_body.getColumn(2).getX(),
@@ -2066,15 +2139,17 @@ void AirsimROSWrapper::publish_camera_tf(const ImageResponse& img_response,
     tf2::convert(trans_ned_nwu_.transform, tf_ned_nwu);
     tf2::convert(trans_nwu_ned_.transform, tf_nwu_ned);
 
-    // Handle cam_tf_body_msg (transform from the camera body frame which is
-    // in NED to the vehicle's origin frame (similar to ROS /odom frame))
+    // Handle cam_tf_body_msg (transform from the camera body
+    // frame which is in NED to the vehicle's origin frame
+    // (similar to ROS /odom frame))
     tf2::Transform tf_OdomNED_CamNED, tf_OdomNWU_CamNWU;
     tf2::convert(cam_tf_body_msg.transform, tf_OdomNED_CamNED);
     tf_OdomNWU_CamNWU = tf_nwu_ned * tf_OdomNED_CamNED * tf_ned_nwu;
     tf2::convert(tf_OdomNWU_CamNWU, cam_tf_body_msg.transform);
 
-    // Handle cam_tf_optical_msg (transform from the camera optical frame
-    // to the vehicle's origin frame (similar to ROS /odom frame))
+    // Handle cam_tf_optical_msg (transform from the camera
+    // optical frame to the vehicle's origin frame (similar to
+    // ROS /odom frame))
     tf2::Transform tf_OdomNED_CamOPT, tf_OdomNWU_CamOPT;
     tf2::convert(cam_tf_optical_msg.transform, tf_OdomNED_CamOPT);
     tf_OdomNWU_CamOPT = tf_nwu_ned * tf_OdomNED_CamOPT;
