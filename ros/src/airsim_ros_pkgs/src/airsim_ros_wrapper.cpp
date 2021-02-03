@@ -180,7 +180,7 @@ void AirsimROSWrapper::initialize_ros() {
 }
 
 void AirsimROSWrapper::add_ros_car(const std::string& vehicle_name) {
-  CarROS car_ros;
+  CarROS car_ros(nh_private_);
   car_ros.odom_frame_id = vehicle_name + frame_name_base_link_;
   car_ros.vehicle_name = vehicle_name;
   car_ros.odom_local_ned_pub =
@@ -811,7 +811,7 @@ void AirsimROSWrapper::vel_cmd_body_frame_std_cb(
       msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.is_rate = true;
   car_ros_vec_[vehicle_idx].vel_cmd.yaw_mode.yaw_or_rate = msg->angular.z;
-  car_ros_vec_[vehicle_idx].velocity_controller.set_target(
+  car_ros_vec_[vehicle_idx].velocity_controller->set_target(
       car_ros_vec_[vehicle_idx].vel_cmd);
   car_ros_vec_[vehicle_idx].has_vel_cmd = true;
 }
@@ -1448,6 +1448,13 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
           airsim_car_client_.simGetCollisionInfo(car_ros.vehicle_name);
       ros::Time curr_ros_time = ros::Time::now();
 
+      if (apply_smoothing_to_odom_) {
+        car_ros.ang_vel_z_smooth.AddMeasurement(
+            car_ros.curr_car_state.kinematics_estimated.twist.angular.z());
+        car_ros.curr_car_state.kinematics_estimated.twist.angular.z() =
+            car_ros.ang_vel_z_smooth.GetEstimate();
+      }
+
       // convert airsim drone state to ROS msgs
       car_ros.curr_odom =
           get_odom_msg_from_airsim_state(car_ros.curr_car_state);
@@ -1484,17 +1491,18 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event) {
         if (car_ros.has_vel_cmd &&
             (ros::Time::now() - car_ros.vel_cmd.t).toSec() > VEL_CMD_DURATION) {
           car_ros.has_vel_cmd = false;
-          car_ros.velocity_controller.set_zero_target();
-          car_ros.velocity_controller.set_zero_target();
-          car_ros.velocity_controller.set_zero_target();
+          car_ros.velocity_controller->set_zero_target();
+          car_ros.velocity_controller->set_zero_target();
+          car_ros.velocity_controller->set_zero_target();
         }
 
         // send control commands from the last callback to
         // airsim
-        CarApiBase::CarControls controls = car_ros.velocity_controller.get_next(
-            car_ros.curr_car_state.kinematics_estimated.twist,
-            car_ros.curr_car_state.speed,
-            ros::Time::now());
+        CarApiBase::CarControls controls =
+            car_ros.velocity_controller->get_next(
+                car_ros.curr_car_state.kinematics_estimated.twist,
+                car_ros.curr_car_state.speed,
+                ros::Time::now());
         std::lock_guard<std::mutex> guard(drone_control_mutex_);
         airsim_car_client_.setCarControls(controls);
         airsim_car_client_.setCarControls(controls);

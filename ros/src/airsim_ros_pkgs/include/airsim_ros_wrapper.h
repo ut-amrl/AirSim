@@ -123,16 +123,22 @@ struct GimbalCmd {
 };
 
 struct PIDVelocityController {
-  PIDVelocityController();
+  PIDVelocityController(const ros::NodeHandle& nh);
   const double K_p = 0.7;
   const double K_i = 0.0;
   const double K_d = 1.0;
+  double K_p_ang = 0.07;
+  double K_i_ang = 0.0;
+  double K_d_ang = 1.0;
   const double VEL_EPSILON = 0.025;
   const double VEL_BRAKE_THRESHOLD = 0.65;
   const double MAINTENANCE_FACTOR = 0.0;
   const double BRAKING_SCALING_FACTOR = 0.1;
   double last_integral_;
   double last_error_;
+  double last_integral_ang_;
+  double last_error_ang_;
+  double last_steering_;
   ros::Time last_timestamp_;
 
   double target_velocity_;
@@ -144,6 +150,39 @@ struct PIDVelocityController {
       const msr::airlib::Twist& current_twist,
       float speed,
       const ros::Time timestep);
+
+  bool LoadParams(const ros::NodeHandle& nh);
+};
+
+struct SmoothingFilter {
+  SmoothingFilter() {
+    for (size_t i = 0; i < buffer.size(); i++) {
+      buffer[i] = 0;
+    }
+  }
+
+  void AddMeasurement(float val) {
+    // Reject outliers
+    if (fabs(val - last_measurement) <= max_change) {
+      curr_sum = curr_sum - buffer[curr_idx] + val;
+      buffer[curr_idx] = val;
+      last_measurement = val;
+      curr_idx = (curr_idx + 1) % window_size;
+    }
+  }
+
+  // Currently the estimate is the result of mean filtering
+  // along with a threshold-based outlier rejection
+  float GetEstimate() { return curr_sum / window_size; }
+
+  const float max_change = 20;
+  static const int window_size = 20;
+
+  std::array<float, window_size> buffer;
+  int curr_idx = 0;
+  float curr_sum = 0;
+  float current_estimate = 0.0;
+  float last_measurement = 0;
 };
 
 class AirsimROSWrapper {
@@ -177,6 +216,9 @@ class AirsimROSWrapper {
   // If set to true the ROS standard coordinate frames are used instead of
   // the AirSim's default NED.
   bool use_nwu_std_ = true;
+
+  // If set to true, angular velocity readings from odometry will be smoothed
+  bool apply_smoothing_to_odom_ = true;
 
   // TODO (srabiee): Currently, we are enforcing the same time-stamp for all
   // image responses that correspond to the same vehicle (and have been
@@ -391,6 +433,9 @@ class AirsimROSWrapper {
 
   // utility struct for a SINGLE car
   struct CarROS {
+    CarROS(const ros::NodeHandle& nh) {
+      velocity_controller = new PIDVelocityController(nh);
+    }
     std::string vehicle_name;
 
     /// All things ROS
@@ -411,7 +456,8 @@ class AirsimROSWrapper {
     airsim_ros_pkgs::CollisionInfo curr_collision_msg;
     bool has_vel_cmd;
     VelCmd vel_cmd;
-    PIDVelocityController velocity_controller;
+    PIDVelocityController* velocity_controller;
+    SmoothingFilter ang_vel_z_smooth;
 
     std::string odom_frame_id;
   };

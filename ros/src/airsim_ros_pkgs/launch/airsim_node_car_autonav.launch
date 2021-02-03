@@ -1,9 +1,14 @@
 <launch>
 	<arg name="host" default="localhost" />
 	<arg name="vehicle_type" default="car" />
+	<arg name="use_api_control" default="true" />
+	<arg name="pid_kp_ang" default="0.07" />
+	<arg name="pid_kd_ang" default="0.25" />
+	<arg name="pid_ki_ang" default="0.0" />
+
 	<node name="airsim_node" pkg="airsim_ros_pkgs" type="airsim_node" output="screen">
-	<!-- <node pkg="nodelet" type="nodelet" name="airsim_nodelet_manager" args="manager" output="screen" /> -->
-	<!-- <node pkg="nodelet" type="nodelet" name="airsim_nodelet" args="standalone airsim_ros_pkgs/airsim_ros_nodelet airsim_nodelet_manager" output="screen"> -->
+		<!-- <node pkg="nodelet" type="nodelet" name="airsim_nodelet_manager" args="manager" output="screen" /> -->
+		<!-- <node pkg="nodelet" type="nodelet" name="airsim_nodelet" args="standalone airsim_ros_pkgs/airsim_ros_nodelet airsim_nodelet_manager" output="screen"> -->
 
 		<remap from="/airsim_node/PhysXCar/odom" to="/odometry/raw"/>
 		<remap from="/airsim_node/PhysXCar/StereoLeft/Scene" to="/stereo/left/image_raw"/>
@@ -12,13 +17,17 @@
 		<remap from="/airsim_node/PhysXCar/StereoRight/Scene/camera_info" to="/stereo/right/camera_info"/>
 
 		<!-- ROS timer rates. Note that timer callback will be processed at maximum possible rate, upperbounded by the following ROS params -->
-		<param name="is_vulkan" type="bool" value="false" /> 
-		<param name="update_airsim_img_response_every_n_sec" type="double" value="0.05" /> 
+		<param name="is_vulkan" type="bool" value="false" />
+		<param name="update_airsim_img_response_every_n_sec" type="double" value="0.05" />
 		<param name="update_airsim_control_every_n_sec" type="double" value="0.01" />
 		<param name="update_lidar_every_n_sec" type="double" value="0.1" />
 		<param name="host_ip" type="string" value="$(arg host)" />
 		<param name="vehicle_type" type="string" value="$(arg vehicle_type)" />
-		<param name="use_api_control" type="bool" value="true" />
+		<param name="use_api_control" type="bool" value="$(arg use_api_control)" />
+
+		<param name="kp_ang" type="double" value="$(arg pid_kp_ang)"/>
+		<param name="kd_ang" type="double" value="$(arg pid_kd_ang)"/>
+		<param name="ki_ang" type="double" value="$(arg pid_ki_ang)"/>
 	</node>
 
 	<!-- Static transforms -->
