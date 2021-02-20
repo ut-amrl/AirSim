@@ -553,6 +553,9 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
   reset_to_loc_srvr_ = nh_private_.advertiseService(
       "reset_to_loc", &AirsimROSWrapper::reset_to_loc_srv_cb, this);
 
+  turn_in_place_srv_ = nh_private_.advertiseService(
+      "turn_in_place", &AirsimROSWrapper::turn_in_place_srv_cb, this);
+
   // todo mimic gazebo's /use_sim_time feature which publishes airsim's clock
   // time..via an rpc call?!
   // clock_pub_ = nh_private_.advertise<rosgraph_msgs::Clock>("clock", 10);
@@ -772,6 +775,52 @@ bool AirsimROSWrapper::reset_to_loc_srv_cb(
                                  target_pose.orientation.z);
   Pose pose(position, orientation);
   airsim_car_client_.simSetVehiclePose(pose, true, request.vehicle_name);
+
+  response.success = true;
+  return true;
+}
+
+bool AirsimROSWrapper::turn_in_place_srv_cb(
+    airsim_ros_pkgs::TurnInPlace::Request& request,
+    airsim_ros_pkgs::TurnInPlace::Response& response) {
+  // Angle increments to simulate the turn in place at
+  const float kAngleIncrement = 30.0 * M_PI / 180.0;
+  // Time in between each angle increment (milliseconds)
+  const std::chrono::milliseconds kStepTime(800);
+
+  if (vehicle_name_idx_map_.find(request.vehicle_name) ==
+      vehicle_name_idx_map_.end()) {
+    LOG(WARNING) << "Vehicle " << request.vehicle_name << " was not found!";
+    response.success = false;
+    return false;
+  }
+
+  if (vehicle_type_ != CAR) {
+    LOG(WARNING) << "Turn-in-place service is currently only supported"
+                 << " for cars.";
+    response.success = false;
+    return false;
+  }
+
+  // std::lock_guard<std::mutex> guard(drone_control_mutex_);
+  auto& car_ros = car_ros_vec_[vehicle_name_idx_map_[request.vehicle_name]];
+
+  float rotation_angle = fabs(request.yaw);
+  float rotation_direction = (request.yaw > 0) ? 1 : -1;
+  float angle_increment = 0.0;
+  float total_rotation = 0.0;
+  Pose orig_pose = car_ros.curr_car_state.kinematics_estimated.pose;
+  while (rotation_angle > 0.01) {
+    angle_increment = std::min(rotation_angle, kAngleIncrement);
+    rotation_angle -= angle_increment;
+    total_rotation += angle_increment * rotation_direction;
+    Eigen::AngleAxisf total_rotation_aa(total_rotation,
+                                        Eigen::Vector3f(0, 0, -1));
+
+    Pose pose(orig_pose.position, total_rotation_aa * orig_pose.orientation);
+    airsim_car_client_.simSetVehiclePose(pose, true, request.vehicle_name);
+    std::this_thread::sleep_for(kStepTime);
+  }
 
   response.success = true;
   return true;

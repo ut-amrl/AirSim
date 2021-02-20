@@ -16,6 +16,7 @@ STRICT_MODE_OFF  // todo what does this do?
 #include <airsim_ros_pkgs/ResetToLocation.h>
 #include <airsim_ros_pkgs/Takeoff.h>
 #include <airsim_ros_pkgs/TakeoffGroup.h>
+#include <airsim_ros_pkgs/TurnInPlace.h>
 #include <airsim_ros_pkgs/VelCmd.h>
 #include <airsim_ros_pkgs/VelCmdGroup.h>
 #include <cv_bridge/cv_bridge.h>
@@ -294,6 +295,8 @@ class AirsimROSWrapper {
   bool reset_to_loc_srv_cb(
       airsim_ros_pkgs::ResetToLocation::Request& request,
       airsim_ros_pkgs::ResetToLocation::Response& response);
+  bool turn_in_place_srv_cb(airsim_ros_pkgs::TurnInPlace::Request& request,
+                            airsim_ros_pkgs::TurnInPlace::Response& response);
 
   /// ROS tf broadcasters
   void publish_camera_tf(const ImageResponse& img_response,
@@ -464,6 +467,7 @@ class AirsimROSWrapper {
 
   ros::ServiceServer reset_srvr_;
   ros::ServiceServer reset_to_loc_srvr_;
+  ros::ServiceServer turn_in_place_srv_;
   ros::Publisher origin_geo_point_pub_;           // home geo coord of drones
   msr::airlib::GeoPoint origin_geo_point_;        // gps coord of unreal origin
   airsim_ros_pkgs::GPSYaw origin_geo_point_msg_;  // todo duplicate

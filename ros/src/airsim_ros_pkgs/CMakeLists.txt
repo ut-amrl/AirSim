@@ -56,6 +56,7 @@ add_service_files(
   Reset.srv
   ResetToLocation.srv
   SetLocalPosition.srv
+  TurnInPlace.srv
 )
 
 generate_messages(
