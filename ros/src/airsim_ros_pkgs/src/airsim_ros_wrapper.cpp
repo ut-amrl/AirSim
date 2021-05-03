@@ -1669,7 +1669,9 @@ void AirsimROSWrapper::append_static_vehicle_tf(
   vehicle_tf_msg.child_frame_id = vehicle_name;
   vehicle_tf_msg.transform.translation.x = vehicle_setting.position.x();
   vehicle_tf_msg.transform.translation.y = vehicle_setting.position.y();
-  vehicle_tf_msg.transform.translation.z = vehicle_setting.position.z();
+  // Apply the offset in the height of the ground plane and the airsim's world 
+  // reference frame
+  vehicle_tf_msg.transform.translation.z = vehicle_setting.position.z() - 0.2;
   tf2::Quaternion quat;
   quat.setRPY(vehicle_setting.rotation.roll,
               vehicle_setting.rotation.pitch,
